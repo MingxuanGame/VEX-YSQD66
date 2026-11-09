@@ -1,0 +1,26 @@
+{
+  "C_Cpp.intelliSenseEngine": "disabled",
+  "clangd.path": "/usr/bin/clangd",
+  "clangd.arguments": [
+    "--background-index",
+    "--clang-tidy",
+    "--completion-style=detailed",
+    "--query-driver=/usr/bin/arm-none-eabi-*"
+  ],
+  "clangd.checkUpdates": false,
+  "terminal.integrated.env.linux": {
+    "PATH": "${env:HOME}/.local/share/uv/tools/pros-cli/bin:${env:HOME}/.local/bin:/usr/bin:${env:HOME}/.config/Code/User/globalStorage/sigbots.pros/install/vex-vexcom-linux:${env:PATH}",
+    "PROS_TOOLCHAIN": "/usr"
+  },
+  "pros.Enable Auto Updates": false,
+  "makefile.configureOnOpen": false,
+  "xmake.autoGenerateCompileCommands": "disabled",
+  "files.associations": {
+    "*.h": "cpp"
+  },
+  "files.watcherExclude": {
+    "**/bin/**": true,
+    "**/.d/**": true,
+    "**/.cache/**": true
+  }
+}

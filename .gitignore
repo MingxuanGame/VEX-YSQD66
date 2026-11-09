@@ -1,0 +1,22 @@
+# Compiled Object files
+*.o
+*.obj
+
+# Executables
+*.bin
+*.elf
+
+# PROS
+bin/
+# Keep shared VS Code project configuration
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/extensions.json
+!.vscode/c_cpp_properties.json
+.cache/
+compile_commands.json
+temp.log
+temp.errors
+*.ini
+.d/
