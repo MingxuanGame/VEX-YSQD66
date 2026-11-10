@@ -10,10 +10,11 @@
 bin/
 # Keep shared VS Code project configuration
 .vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
 !.vscode/extensions.json
-!.vscode/c_cpp_properties.json
+!.vscode/*.example.json
+toolchain.local.json
+.clangd
+__pycache__/
 .cache/
 compile_commands.json
 temp.log

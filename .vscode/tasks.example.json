@@ -1,0 +1,85 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "PROS: Build",
+      "type": "process",
+      "command": "pros",
+      "args": [
+        "build"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [
+        "$gcc"
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "PROS: Rebuild",
+      "type": "process",
+      "command": "pros",
+      "args": [
+        "build",
+        "all"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [
+        "$gcc"
+      ]
+    },
+    {
+      "label": "PROS: Update compile_commands",
+      "type": "process",
+      "command": "python",
+      "args": [
+        "${workspaceFolder}/tools/configure_env.py"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [
+        "$gcc"
+      ]
+    },
+    {
+      "label": "PROS: Upload",
+      "type": "process",
+      "command": "pros",
+      "args": [
+        "upload"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "PROS: Terminal",
+      "type": "process",
+      "command": "pros",
+      "args": [
+        "terminal"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "PROS: Build & Upload",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "PROS: Build",
+        "PROS: Upload"
+      ],
+      "problemMatcher": []
+    }
+  ]
+}

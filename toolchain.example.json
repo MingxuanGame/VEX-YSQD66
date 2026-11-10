@@ -1,0 +1,8 @@
+{
+  "clangd": "clangd",
+  "cc": "arm-none-eabi-gcc",
+  "cxx": "arm-none-eabi-g++",
+  "pros": "pros",
+  "extraPath": [],
+  "environment": {}
+}

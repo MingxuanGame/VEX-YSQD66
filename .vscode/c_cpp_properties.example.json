@@ -1,8 +1,7 @@
 {
   "configurations": [
     {
-      "name": "PROS Linux",
-      "compilerPath": "/home/mingxuangame/.config/Code/User/globalStorage/sigbots.pros/install/pros-toolchain-linux/bin/arm-none-eabi-g++",
+      "name": "PROS V5",
       "compilerArgs": [
         "-mcpu=cortex-a9",
         "-mfpu=neon-fp16",
@@ -11,8 +10,7 @@
       ],
       "compileCommands": "${workspaceFolder}/compile_commands.json",
       "includePath": [
-        "${workspaceFolder}/include",
-        "/home/mingxuangame/code/VEX-yuanshen/VEX-yuanshen/include"
+        "${workspaceFolder}/include"
       ],
       "defines": [
         "_POSIX_THREADS",
@@ -22,12 +20,12 @@
         "_PROS_INCLUDE_LIBLVGL_LLEMU_H",
         "_PROS_INCLUDE_LIBLVGL_LLEMU_HPP"
       ],
-      "cStandard": "gnu11",
-      "cppStandard": "gnu++20",
+      "cStandard": "gnu23",
+      "cppStandard": "gnu++26",
       "intelliSenseMode": "gcc-arm",
       "browse": {
         "path": [
-          "/home/mingxuangame/code/VEX-yuanshen/VEX-yuanshen"
+          "${workspaceFolder}"
         ],
         "limitSymbolsToIncludedHeaders": true,
         "databaseFilename": ""
