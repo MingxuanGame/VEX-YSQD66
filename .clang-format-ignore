@@ -1,0 +1,8 @@
+# Keep SDK, vendor code, and generated files unchanged.
+include/pros/**
+include/liblvgl/**
+include/api.h
+firmware/**
+bin/**
+.d/**
+.cache/**

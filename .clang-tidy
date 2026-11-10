@@ -1,0 +1,21 @@
+# Only a small set of checks suited to this embedded project.
+Checks: >-
+  -*,
+  bugprone-integer-division,
+  bugprone-use-after-move,
+  google-build-using-namespace,
+  readability-identifier-naming
+WarningsAsErrors: ''
+HeaderFilterRegex: '(^|[/\\])include[/\\].*'
+ExcludeHeaderFilterRegex: '(^|[/\\])include[/\\](pros|liblvgl)[/\\]|(^|[/\\])include[/\\]api\.h$'
+FormatStyle: file
+CheckOptions:
+  readability-identifier-naming.GlobalVariablePrefix: '_g_'
+  readability-identifier-naming.PrivateMemberPrefix: 'm_'
+  readability-identifier-naming.ProtectedMemberPrefix: 'm_'
+  readability-identifier-naming.ConstantCase: CamelCase
+  readability-identifier-naming.ConstantPrefix: 'k'
+  readability-identifier-naming.GlobalConstantCase: CamelCase
+  readability-identifier-naming.GlobalConstantPrefix: 'k'
+  readability-identifier-naming.ClassConstantCase: CamelCase
+  readability-identifier-naming.ClassConstantPrefix: 'k'

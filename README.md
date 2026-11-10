@@ -2,6 +2,23 @@
 
 基于 PROS 的 VEX V5 机器人 C/C++ 工程。
 
+## 开发规范与编辑器配置
+
+- `.clang-format`：C/C++ 四空格缩进、大括号不换行、函数间空行；`.clang-format-ignore` 为独立 clang-format 排除 SDK、固件和生成物，编辑器中也仅格式化自有代码。
+- `.editorconfig`：UTF-8、LF、文件末尾换行；Makefile 保留 Tab，JSON 使用两空格。
+- `.gitattributes`：统一 Git 文本换行为 LF，固件、归档和图片按二进制处理。
+- `.clang-tidy`：检查部分命名规则、命名空间导入及常见误用；端口和比赛行为仍需代码检视及实机验证。
+- `.vscode/settings.example.json`：通过 clangd 按仓库规则保存时格式化 C/C++，关闭自动推断缩进。运行下方配置脚本后同步到本机设置。
+
+按 VS Code 扩展建议安装 clangd 和 EditorConfig 扩展。使用独立格式化命令时，需要 `clang-format`；VS Code 的 clangd 可直接提供格式化。命名诊断由 clangd 的 clang-tidy 集成提供，也可使用独立 `clang-tidy`。这些配置已用 LLVM 22 验证，旧版本出现未知选项时先核对工具版本。
+
+仅对本次修改的自有 C/C++ 文件执行格式化，例如：
+
+```powershell
+clang-format -i src/chassis.cpp include/chassis.h
+clang-format --dry-run --Werror src/chassis.cpp include/chassis.h
+```
+
 ## 自动配置环境
 
 在项目根目录执行：
@@ -33,6 +50,8 @@ python tools/configure_env.py --check
 ## 编译和上传
 
 使用 VS Code 的 `PROS: Build`、`PROS: Rebuild`、`PROS: Upload`、`PROS: Terminal` 和 `PROS: Build & Upload` 任务；任务直接调用检测到的 PROS CLI，并携带本地环境设置。`PROS: Update compile_commands` 会重新运行配置脚本。
+
+`PROS: Check sources` 会运行 `tools/configure_env.py --check`，用于配置并检查所有源文件。
 
 若 PROS 已在终端 PATH 中，也可以直接使用：
 
