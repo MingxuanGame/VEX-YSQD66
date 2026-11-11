@@ -5,9 +5,14 @@
 # Executables
 *.bin
 *.elf
+*.exe
+
+# CMake
+build/
+cmake-build-*/
 
 # PROS
-bin/
+/bin/
 # Keep shared VS Code project configuration
 .vscode/*
 !.vscode/extensions.json

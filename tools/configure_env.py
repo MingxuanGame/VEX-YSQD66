@@ -16,7 +16,9 @@ def write_json(path, value):
 
 
 TOOL_NAMES = {"clangd": "clangd", "cc": "arm-none-eabi-gcc",
-              "cxx": "arm-none-eabi-g++", "pros": "pros"}
+              "cxx": "arm-none-eabi-g++", "pros": "pros",
+              "make": "make", "cmake": "cmake", "ctest": "ctest",
+              "host": "g++"}
 
 
 def search_directories():
@@ -32,7 +34,12 @@ def search_directories():
                 patterns += [str(base / "LLVM/bin"), str(base / "Arm GNU Toolchain*/bin"),
                              str(base / "Arm GNU Toolchain*/*/bin"),
                              str(base / "Programs/LLVM/bin"),
+                             str(base / "Programs/pros-cli/Scripts"),
                              str(base / "Code/User/globalStorage/sigbots.pros/install/*/bin"),
+                             str(base / "Code/User/globalStorage/sigbots.pros/install/*/usr/bin"),
+                             str(base / "Code/User/globalStorage/sigbots.pros/install/pros-toolchain-windows/usr/bin"),
+                             str(base / "Code/User/globalStorage/sigbots.pros/install/pros-cli-windows"),
+                             str(base / "Microsoft Visual Studio/*/*/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin"),
                              str(base / "Microsoft/WinGet/Packages/*LLVM*/*/bin"),
                              str(base / "Microsoft/WinGet/Packages/*MSYS2*/ucrt64/bin")]
         import string
@@ -106,6 +113,46 @@ def system_includes(compiler, options, language, env):
     return paths
 
 
+def host_entries(config):
+    """Compile commands for sim/tests using the host compiler, not the ARM toolchain."""
+    host = config.get("host")
+    if not host:
+        return []
+    options = ["-std=c++20", "-DENABLE_SIMULATOR",
+               "-I", ROOT.as_posix(),
+               "-I", (ROOT / "include").as_posix(),
+               "-I", (ROOT / "sim").as_posix()]
+    entries = []
+    for folder in ("sim", "tests"):
+        base = ROOT / folder
+        if not base.is_dir():
+            continue
+        for source in sorted(base.rglob("*.cpp")):
+            entries.append({
+                "directory": ROOT.as_posix(),
+                "file": source.as_posix(),
+                "arguments": [host, *options, "-c", source.as_posix()],
+            })
+    return entries
+
+
+def check_project_templates():
+    """project.pros 的 template location 可能来自另一台机器；只警告，不阻塞构建。"""
+    project = ROOT / "project.pros"
+    if not project.exists():
+        return
+    try:
+        data = json.loads(project.read_text(encoding="utf-8-sig"))
+        templates = data.get("py/state", {}).get("templates", {})
+    except (OSError, ValueError):
+        return
+    for name, template in templates.items():
+        location = template.get("location")
+        if location and not Path(location).exists():
+            print(f"warning: PROS template '{name}' not found at {location} "
+                  f"(pros build still works; pros c fetch/upgrade may fail)", flush=True)
+
+
 def configure(config, env, check):
     clangd = config["clangd"]
     subprocess.run([clangd, "--version"], env=env, cwd=ROOT, check=True, capture_output=True)
@@ -126,6 +173,7 @@ def configure(config, env, check):
             arguments = [compiler, *options, *includes, "-iquote", (ROOT / "include").as_posix(),
                          "-iquote", (ROOT / "include" / relative.parent).as_posix(), "-c", source.as_posix()]
             entries.append({"directory": ROOT.as_posix(), "file": source.as_posix(), "arguments": arguments})
+    entries.extend(host_entries(config))
     if not entries:
         raise ValueError("No C/C++ sources found in src")
     settings = json.loads((ROOT / ".vscode/settings.example.json").read_text(encoding="utf-8"))
@@ -145,17 +193,40 @@ def configure(config, env, check):
     write_json(ROOT / ".vscode/c_cpp_properties.json", cpp)
     tasks = json.loads((ROOT / ".vscode/tasks.example.json").read_text(encoding="utf-8"))
     for task in tasks["tasks"]:
-        if task.get("command") == "pros":
-            task["command"] = config.get("pros") or "pros"
-            task["options"]["env"] = {**config.get("environment", {}), "PATH": env["PATH"]}
-        elif task.get("command") == "python":
+        command = task.get("command")
+        if command in ("pros", "make", "cmake", "ctest"):
+            task["command"] = config.get(command) or command
+            task.setdefault("options", {})["env"] = {
+                **config.get("environment", {}), "PATH": env["PATH"]}
+        elif command == "python":
             task["command"] = sys.executable
+            task.setdefault("options", {})["env"] = {
+                **config.get("environment", {}), "PATH": env["PATH"]}
     write_json(ROOT / ".vscode/tasks.json", tasks)
     print(f"Configured clangd: {clangd}\nGenerated {len(entries)} compile commands.", flush=True)
     if check:
+        failed = 0
         for entry in entries:
-            subprocess.run([clangd, "--check=" + entry["file"], "--compile-commands-dir=" + ROOT.as_posix()],
-                           cwd=ROOT, env=env, check=True)
+            result = subprocess.run(
+                [clangd, "--check=" + entry["file"],
+                 "--compile-commands-dir=" + ROOT.as_posix()],
+                cwd=ROOT, env=env, text=True, capture_output=True)
+            text = (result.stdout or "") + (result.stderr or "")
+            if result.returncode == 0:
+                continue
+            # clangd 22 的 --check 会执行 "tweak"（如 ExtractFunction），
+            # 某些语法结构会让 tweak 自身失败并返回非零，但下面仍是
+            # "All checks completed, 1 errors"。这类内部 tweak 失败不代表源码有错。
+            completed = re.findall(r"All checks completed, (\d+) errors?", text)
+            tweak_failures = len(re.findall(r"tweak: .*FAIL", text))
+            if completed and 0 < int(completed[-1]) <= tweak_failures:
+                print(f"warning: clangd internal tweak failed (ignored): {entry['file']}", flush=True)
+                continue
+            failed += 1
+            print(f"clangd check failed: {entry['file']}", flush=True)
+            print(text, file=sys.stderr)
+        if failed:
+            raise ValueError(f"{failed} source file(s) failed clangd check")
 
 
 def main():
@@ -171,8 +242,15 @@ def main():
     env["PATH"] = os.pathsep.join([*config.get("extraPath", []), env.get("PATH", "")])
     directories = search_directories()
     for name in TOOL_NAMES:
-        config[name] = detect_tool(name, getattr(args, name), config.get(name), env, directories, required=name != "pros")
-        print(f"{name}: {config[name] or 'not found (optional; build/upload unavailable)'}", flush=True)
+        config[name] = detect_tool(name, getattr(args, name), config.get(name), env, directories,
+                                   required=name in ("clangd", "cc", "cxx"))
+        print(f"{name}: {config[name] or 'not found (optional)'}", flush=True)
+    if not config.get("host"):
+        fallback = shutil.which("clang++", path=env["PATH"]) or shutil.which(
+            "clang++", path=os.pathsep.join(directories))
+        if fallback:
+            config["host"] = Path(fallback).resolve().as_posix()
+            print(f"host: {config['host']} (clang++ fallback)", flush=True)
     # Make compiler and PROS dependencies available to spawned tools and VS Code tasks.
     paths = [str(Path(config[name]).parent) for name in TOOL_NAMES if config[name]]
     for path in list(paths):
@@ -182,8 +260,13 @@ def main():
             if shell_bin.is_dir():
                 paths.append(str(shell_bin))
     config["extraPath"] = list(dict.fromkeys([*paths, *config.get("extraPath", [])]))
+    if config.get("cxx"):
+        # PROS CLI 通过 PROS_TOOLCHAIN 查找 usr/bin 下的 arm-none-eabi-* 和 make。
+        config.setdefault("environment", {})["PROS_TOOLCHAIN"] = str(Path(config["cxx"]).parent.parent)
+        env["PROS_TOOLCHAIN"] = config["environment"]["PROS_TOOLCHAIN"]
     env["PATH"] = os.pathsep.join([*config["extraPath"], env["PATH"]])
     env["LC_ALL"] = "C"
+    check_project_templates()
     write_json(local, config)
     configure(config, env, args.check)
 
