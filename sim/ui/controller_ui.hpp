@@ -13,10 +13,11 @@ struct ConeVisual {
     double y_m = 0.0;
     bool active = true;
     bool out_of_bounds = false;
+    int color = 2;
 };
 
 struct FieldState {
-    static constexpr int kConeCount = 4;
+    static constexpr int kConeCount = 20;
     bool valid = false;
     double x_m = 0.0;
     double y_m = 0.0;

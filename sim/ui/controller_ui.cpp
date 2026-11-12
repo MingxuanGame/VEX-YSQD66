@@ -700,8 +700,7 @@ void ControllerUi::paintField(HDC dc, int x, int y, int size) {
     };
 
     const Goal goals[] = {{0.655, 0.345, GoalKind::Neutral}, {0.510, 0.495, GoalKind::Neutral},
-                          {0.340, 0.655, GoalKind::Neutral}, {0.190, 0.820, GoalKind::Neutral},
-                          {0.350, 0.345, GoalKind::Neutral}, {0.500, 0.350, GoalKind::Blue},
+                          {0.340, 0.655, GoalKind::Neutral}, {0.500, 0.350, GoalKind::Blue},
                           {0.660, 0.495, GoalKind::Blue},    {0.345, 0.495, GoalKind::Red},
                           {0.500, 0.655, GoalKind::Red}};
     auto draw_goal = [&](double nx, double ny, GoalKind kind) {
@@ -738,6 +737,43 @@ void ControllerUi::paintField(HDC dc, int x, int y, int size) {
         Ellipse(dc, cx - 5, cy - 5, cx + 5, cy + 5);
     }
 
+    // 用户补充的 9 个底座套筒（5 黑/黄、2 蓝、2 红）。
+    // gx = 1..5 从左到右；gy = 1..5 从上到下。
+    struct NewSleeve {
+        int gx;
+        int gy;
+        int kind; // 0=neutral, 1=blue, 2=red
+    };
+
+    const NewSleeve sleeves[] = {{1, 2, 0}, {2, 1, 0}, {3, 3, 0}, {4, 5, 0}, {5, 4, 0},
+                                 {1, 4, 1}, {2, 5, 1}, {4, 1, 2}, {5, 2, 2}};
+    for (const NewSleeve &sleeve : sleeves) {
+        const int cx = px(sleeve.gx / 6.0);
+        const int cy = py(sleeve.gy / 6.0);
+        SelectObject(dc, black_brush);
+        Ellipse(dc, cx - 15, cy - 15, cx + 15, cy + 15);
+        if (sleeve.kind == 0) {
+            SelectObject(dc, white_brush);
+            Ellipse(dc, cx - 11, cy - 11, cx + 11, cy + 11);
+            SelectObject(dc, yellow_brush);
+            Ellipse(dc, cx - 8, cy - 8, cx + 8, cy + 8);
+        } else if (sleeve.kind == 1) {
+            SelectObject(dc, blue_brush);
+            Ellipse(dc, cx - 13, cy - 13, cx + 13, cy + 13);
+            SelectObject(dc, black_brush);
+            Ellipse(dc, cx - 7, cy - 7, cx + 7, cy + 7);
+            SelectObject(dc, blue_brush);
+            Ellipse(dc, cx - 4, cy - 4, cx + 4, cy + 4);
+        } else {
+            SelectObject(dc, red_brush);
+            Ellipse(dc, cx - 13, cy - 13, cx + 13, cy + 13);
+            SelectObject(dc, black_brush);
+            Ellipse(dc, cx - 7, cy - 7, cx + 7, cy + 7);
+            SelectObject(dc, red_brush);
+            Ellipse(dc, cx - 4, cy - 4, cx + 4, cy + 4);
+        }
+    }
+
     // 4 个三色筒：四边中点，当前朝向为黄色。
     const int bar = size / 10;
     const int bar_thick = 6;
@@ -770,24 +806,30 @@ void ControllerUi::paintField(HDC dc, int x, int y, int size) {
     draw_bucket(x + size - bucket + 8, y + size - bucket + 8);
 
     // 4 组红/黄/蓝锥堆：位置由 ConeField 物理状态决定，出界后画红叉。
-    auto draw_cone = [&](int cx, int cy, bool out_of_bounds) {
+    auto draw_cone = [&](int cx, int cy, int color, bool out_of_bounds) {
         SelectObject(dc, black_brush);
-        Ellipse(dc, cx - 12, cy - 12, cx + 12, cy + 12);
+        Ellipse(dc, cx - 7, cy - 7, cx + 7, cy + 7);
         if (out_of_bounds) {
             SelectObject(dc, red_pen);
-            Ellipse(dc, cx - 12, cy - 12, cx + 12, cy + 12);
-            MoveToEx(dc, cx - 8, cy - 8, nullptr);
-            LineTo(dc, cx + 8, cy + 8);
-            MoveToEx(dc, cx + 8, cy - 8, nullptr);
-            LineTo(dc, cx - 8, cy + 8);
+            Ellipse(dc, cx - 7, cy - 7, cx + 7, cy + 7);
+            MoveToEx(dc, cx - 5, cy - 5, nullptr);
+            LineTo(dc, cx + 5, cy + 5);
+            MoveToEx(dc, cx + 5, cy - 5, nullptr);
+            LineTo(dc, cx - 5, cy + 5);
             return;
         }
-        SelectObject(dc, red_brush);
-        Ellipse(dc, cx - 11, cy - 4, cx + 1, cy + 8);
-        SelectObject(dc, blue_brush);
-        Ellipse(dc, cx - 1, cy - 11, cx + 11, cy + 1);
-        SelectObject(dc, yellow_brush);
-        Ellipse(dc, cx - 5, cy - 11, cx + 5, cy - 1);
+        if (color == 0) {
+            SelectObject(dc, red_brush);
+            Ellipse(dc, cx - 5, cy - 5, cx + 5, cy + 5);
+        } else if (color == 1) {
+            SelectObject(dc, blue_brush);
+            Ellipse(dc, cx - 5, cy - 5, cx + 5, cy + 5);
+        } else {
+            SelectObject(dc, yellow_brush);
+            SelectObject(dc, black_pen);
+            POINT cone[3] = {{cx, cy - 6}, {cx - 5, cy + 5}, {cx + 5, cy + 5}};
+            Polygon(dc, cone, 3);
+        }
     };
 
     if (m_field.cone_count > 0) {
@@ -796,15 +838,29 @@ void ControllerUi::paintField(HDC dc, int x, int y, int size) {
             int cx = 0;
             int cy = 0;
             worldToScreen(cone.x_m, cone.y_m, x, y, size, &cx, &cy);
-            draw_cone(cx, cy, cone.out_of_bounds);
+            draw_cone(cx, cy, cone.color, cone.out_of_bounds);
         }
     } else {
-        const double fallback[4][2] = {{1.0 / 6.0, 1.0 / 6.0},
-                                       {2.0 / 6.0, 2.0 / 6.0},
-                                       {4.0 / 6.0, 4.0 / 6.0},
-                                       {5.0 / 6.0, 5.0 / 6.0}};
-        for (const auto &cluster : fallback)
-            draw_cone(px(cluster[0]), py(cluster[1]), false);
+        const double centers[6][2] = {{1.0 / 6.0, 1.0 / 6.0}, {2.0 / 6.0, 2.0 / 6.0},
+                                      {4.0 / 6.0, 4.0 / 6.0}, {5.0 / 6.0, 5.0 / 6.0},
+                                      {5.0 / 6.0, 1.0 / 6.0}, {1.0 / 6.0, 5.0 / 6.0}};
+        const double offsets[4][2] = {{-0.065, 0.0}, {0.065, 0.0}, {0.0, -0.065}, {0.0, 0.065}};
+        const int colors[4] = {0, 1, 2, 2};
+        const double scale = size / kFieldSizeM;
+        for (int group = 0; group < 4; ++group) {
+            const int cx = px(centers[group][0]);
+            const int cy = py(centers[group][1]);
+            for (int cone = 0; cone < 4; ++cone) {
+                draw_cone(cx + static_cast<int>(offsets[cone][0] * scale),
+                          cy + static_cast<int>(offsets[cone][1] * scale), colors[cone], false);
+            }
+        }
+        for (int pair = 0; pair < 2; ++pair) {
+            const int cx = px(centers[4 + pair][0]);
+            const int cy = py(centers[4 + pair][1]);
+            draw_cone(cx - 4, cy, 3, false);
+            draw_cone(cx + 4, cy, 3, false);
+        }
     }
 
     // 三台对方机器人占位，和真实场地的四台起始车对应。

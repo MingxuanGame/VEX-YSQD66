@@ -102,10 +102,11 @@ void test_sim() {
 
     // 连续向上顶锥，锥最终碰到围边并进入 out_of_bounds。
     sim_physics::ConeField boundary_cones;
-    double robot_y_m = 2.90;
+    const double boundary_cone_x = boundary_cones.get(0).x_m;
+    double robot_y_m = boundary_cones.get(0).y_m - 0.20;
     for (int i = 0; i < 300; ++i) {
         robot_y_m += 0.005;
-        boundary_cones.update(0.01, 0.61, robot_y_m, 0.0, 0.5);
+        boundary_cones.update(0.01, boundary_cone_x, robot_y_m, 0.0, 0.5);
     }
     CHECK(boundary_cones.get(0).out_of_bounds);
 

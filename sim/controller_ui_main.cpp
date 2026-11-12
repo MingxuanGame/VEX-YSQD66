@@ -29,9 +29,11 @@ void physicsTick(double dt_sec) {
 }
 
 constexpr double kFieldSizeM = 3.6576;
-constexpr double kGoalPositions[9][2] = {{0.655, 0.345}, {0.510, 0.495}, {0.340, 0.655},
-                                         {0.190, 0.820}, {0.350, 0.345}, {0.500, 0.350},
-                                         {0.660, 0.495}, {0.345, 0.495}, {0.500, 0.655}};
+constexpr double kGoalPositions[7][2] = {{0.655, 0.345}, {0.510, 0.495}, {0.340, 0.655},
+                                         {0.500, 0.350}, {0.660, 0.495}, {0.345, 0.495},
+                                         {0.500, 0.655}};
+constexpr double kSleeveGrid[9][2] = {{1, 2}, {2, 1}, {3, 3}, {4, 5}, {5, 4},
+                                      {1, 4}, {2, 5}, {4, 1}, {5, 2}};
 
 void updateFieldCollision(sim_physics::ChassisSim &physics, const sim::ControllerUi &ui,
                           sim_physics::ConeField &cones) {
@@ -55,6 +57,18 @@ void updateFieldCollision(sim_physics::ChassisSim &physics, const sim::Controlle
         const double gy = (1.0 - goal[1]) * kFieldSizeM;
         const double dx = x - gx;
         const double dy = y - gy;
+        if (dx * dx + dy * dy < 0.04) {
+            physics.setCollisionObject(sim_physics::CollisionObject::Cone);
+            return;
+        }
+    }
+
+    // 新增的 9 个底座套筒也是实体。
+    for (const auto &sleeve : kSleeveGrid) {
+        const double sx = sleeve[0] / 6.0 * kFieldSizeM;
+        const double sy = (1.0 - sleeve[1] / 6.0) * kFieldSizeM;
+        const double dx = x - sx;
+        const double dy = y - sy;
         if (dx * dx + dy * dy < 0.04) {
             physics.setCollisionObject(sim_physics::CollisionObject::Cone);
             return;
@@ -178,6 +192,15 @@ int main() {
             field.x_m = pose.x_m;
             field.y_m = pose.y_m;
             field.heading_deg = pose.heading_deg;
+            field.cone_count = cones.count();
+            for (int i = 0; i < field.cone_count; ++i) {
+                const sim_physics::ConeBody &cone = cones.get(i);
+                field.cones[i].x_m = cone.x_m;
+                field.cones[i].y_m = cone.y_m;
+                field.cones[i].active = cone.active;
+                field.cones[i].out_of_bounds = cone.out_of_bounds;
+                field.cones[i].color = static_cast<int>(cone.color);
+            }
             field.mode = static_cast<int>(control::Mode::Drive);
             ui.setFieldState(field);
             ui.setStatusText("PLACEMENT", "Drag robot, then ENTER or click START");
@@ -216,6 +239,7 @@ int main() {
             field.cones[i].y_m = cone.y_m;
             field.cones[i].active = cone.active;
             field.cones[i].out_of_bounds = cone.out_of_bounds;
+            field.cones[i].color = static_cast<int>(cone.color);
         }
         field.mode = static_cast<int>(loop.getMode());
         ui.setFieldState(field);
