@@ -7,6 +7,7 @@
 #include "sim/hardware/sim_motor.hpp"
 #include "sim/physics/chassis_sim.hpp"
 #include "sim/physics/cone_field.hpp"
+#include "sim/physics/toggle_field.hpp"
 
 #include <cmath>
 
@@ -109,6 +110,21 @@ void test_sim() {
         boundary_cones.update(0.01, boundary_cone_x, robot_y_m, 0.0, 0.5);
     }
     CHECK(boundary_cones.get(0).out_of_bounds);
+
+    // ==================== Toggle：接触旋转、离开后吸附 ====================
+    sim_physics::ToggleField toggles;
+    CHECK(toggles.get(0).seated);
+    CHECK(toggles.get(0).face == sim_physics::ToggleColor::Yellow);
+    const double toggle_x = toggles.get(0).x_m;
+    const double toggle_y = toggles.get(0).y_m;
+    for (int i = 0; i < 70; ++i)
+        toggles.update(0.01, toggle_x, toggle_y, 1.0, 0.0);
+    CHECK(toggles.get(0).touching);
+    CHECK(!toggles.get(0).seated);
+    for (int i = 0; i < 200; ++i)
+        toggles.update(0.01, 0.0, 0.0, 0.0, 0.0);
+    CHECK(toggles.get(0).seated);
+    CHECK(toggles.get(0).face == sim_physics::ToggleColor::Red);
 
     // ==================== 级联抬升 / 夹爪 / 推板 ====================
     sim::SimMechanism mechanism;

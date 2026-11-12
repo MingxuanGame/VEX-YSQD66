@@ -10,10 +10,12 @@
 #include "sim/hardware/sim_motor.hpp"
 #include "sim/physics/chassis_sim.hpp"
 #include "sim/physics/cone_field.hpp"
+#include "sim/physics/toggle_field.hpp"
 #include "sim/ui/controller_ui.hpp"
 #include "tuning/param_apply.hpp"
 #include "tuning/params_manager.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -35,18 +37,27 @@ constexpr double kGoalPositions[7][2] = {{0.655, 0.345}, {0.510, 0.495}, {0.340,
 constexpr double kSleeveGrid[9][2] = {{1, 2}, {2, 1}, {3, 3}, {4, 5}, {5, 4},
                                       {1, 4}, {2, 5}, {4, 1}, {5, 2}};
 
-void updateFieldCollision(sim_physics::ChassisSim &physics, const sim::ControllerUi &ui,
-                          sim_physics::ConeField &cones) {
+void updateFieldCollision(sim_physics::ChassisSim &physics, sim_physics::ConeField &cones,
+                          sim_physics::ToggleField &toggles) {
     const double x = physics.getPoseXMeters();
     const double y = physics.getPoseYMeters();
     const double speed = physics.getChassisVelocityMps();
     const double heading_rad = physics.getPoseHeadingDeg() * 3.141592653589793 / 180.0;
-    cones.update(0.016, x, y, speed * std::cos(heading_rad), speed * std::sin(heading_rad));
+    const double vx = speed * std::cos(heading_rad);
+    const double vy = speed * std::sin(heading_rad);
+    cones.update(0.016, x, y, vx, vy);
+    toggles.update(0.016, x, y, vx, vy);
 
-    const bool outside = (x < 0.25 || x > kFieldSizeM - 0.25 || y < 0.25 || y > kFieldSizeM - 0.25);
+    constexpr double kBoundaryMarginM = 0.25;
+    const bool outside = (x < kBoundaryMarginM || x > kFieldSizeM - kBoundaryMarginM ||
+                          y < kBoundaryMarginM || y > kFieldSizeM - kBoundaryMarginM);
 
     // 顶到场地边界时形成“墙”；操作手反向时解除，允许倒车回场。
-    if (outside && ui.analog(io::Analog::LeftY) >= 0) {
+    if (outside) {
+        // 不管从哪个方向越界都夹回场地；否则侧向越界时会被画到控制器面板上。
+        physics.setPose(std::clamp(x, kBoundaryMarginM, kFieldSizeM - kBoundaryMarginM),
+                        std::clamp(y, kBoundaryMarginM, kFieldSizeM - kBoundaryMarginM),
+                        physics.getPoseHeadingDeg());
         physics.setCollisionObject(sim_physics::CollisionObject::Wall);
         return;
     }
@@ -121,6 +132,7 @@ int main() {
     sim_physics::ChassisSim physics(&lf, &lb, &rf, &rb, &imu);
     physics.setPose(0.50, 0.12, 90.0); // 底侧起始位，面朝场地中心
     sim_physics::ConeField cones;
+    sim_physics::ToggleField toggles;
     g_physics = &physics;
     sim::register_physics_tick(physicsTick);
 
@@ -145,6 +157,7 @@ int main() {
     auto resetSimulation = [&]() {
         physics.reset();
         cones.reset();
+        toggles.reset();
         mechanism.reset();
         sim::Battery::reset();
         sim::init_clock();
@@ -159,6 +172,7 @@ int main() {
         physics.reset();
         physics.setPose(pose.x_m, pose.y_m, pose.heading_deg);
         cones.reset();
+        toggles.reset();
         mechanism.reset();
         sim::Battery::reset();
         sim::init_clock();
@@ -201,6 +215,12 @@ int main() {
                 field.cones[i].out_of_bounds = cone.out_of_bounds;
                 field.cones[i].color = static_cast<int>(cone.color);
             }
+            field.toggle_count = toggles.count();
+            for (int i = 0; i < field.toggle_count; ++i) {
+                const sim_physics::ToggleState &toggle = toggles.get(i);
+                field.toggles[i].seated = toggle.seated;
+                field.toggles[i].color = static_cast<int>(toggle.face);
+            }
             field.mode = static_cast<int>(control::Mode::Drive);
             ui.setFieldState(field);
             ui.setStatusText("PLACEMENT", "Drag robot, then ENTER or click START");
@@ -210,7 +230,7 @@ int main() {
         }
 
         // 固定 1ms 物理步进，渲染约 60Hz。
-        updateFieldCollision(physics, ui, cones);
+        updateFieldCollision(physics, cones, toggles);
         for (int i = 0; i < 16; ++i) {
             sim::advance_time(0.001);
             mechanism.update(0.001);
@@ -240,6 +260,12 @@ int main() {
             field.cones[i].active = cone.active;
             field.cones[i].out_of_bounds = cone.out_of_bounds;
             field.cones[i].color = static_cast<int>(cone.color);
+        }
+        field.toggle_count = toggles.count();
+        for (int i = 0; i < field.toggle_count; ++i) {
+            const sim_physics::ToggleState &toggle = toggles.get(i);
+            field.toggles[i].seated = toggle.seated;
+            field.toggles[i].color = static_cast<int>(toggle.face);
         }
         field.mode = static_cast<int>(loop.getMode());
         ui.setFieldState(field);

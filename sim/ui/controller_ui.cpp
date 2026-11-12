@@ -774,7 +774,7 @@ void ControllerUi::paintField(HDC dc, int x, int y, int size) {
         }
     }
 
-    // 4 个三色筒：四边中点，当前朝向为黄色。
+    // 4 个 Toggle：颜色由 ToggleField 的吸附状态决定，未就位显示黄色。
     const int bar = size / 10;
     const int bar_thick = 6;
     SelectObject(dc, black_brush);
@@ -784,11 +784,35 @@ void ControllerUi::paintField(HDC dc, int x, int y, int size) {
     Rectangle(dc, x + 1, y + size / 2 - bar / 2, x + bar_thick, y + size / 2 + bar / 2);
     Rectangle(dc, x + size - bar_thick, y + size / 2 - bar / 2, x + size - 1,
               y + size / 2 + bar / 2);
-    SelectObject(dc, yellow_brush);
+
+    auto toggle_color = [&](int index) {
+        if (m_field.toggle_count > 0 && index < m_field.toggle_count) {
+            const ToggleVisual &toggle = m_field.toggles[index];
+            if (toggle.seated && (toggle.color == 0 || toggle.color == 1))
+                return toggle.color;
+        }
+        return 2; // 未就位或黄色 Toggle
+    };
+    auto toggle_brush = [&](int color) -> HBRUSH {
+        if (color == 0)
+            return red_brush;
+        if (color == 1)
+            return blue_brush;
+        return yellow_brush;
+    };
+
+    const HBRUSH top_brush = toggle_brush(toggle_color(0));
+    const HBRUSH right_brush = toggle_brush(toggle_color(1));
+    const HBRUSH bottom_brush = toggle_brush(toggle_color(2));
+    const HBRUSH left_brush = toggle_brush(toggle_color(3));
+    SelectObject(dc, top_brush);
     Rectangle(dc, x + size / 2 - bar / 2 + 2, y + 2, x + size / 2 + bar / 2 - 2, y + bar_thick);
+    SelectObject(dc, bottom_brush);
     Rectangle(dc, x + size / 2 - bar / 2 + 2, y + size - bar_thick, x + size / 2 + bar / 2 - 2,
               y + size - 2);
+    SelectObject(dc, left_brush);
     Rectangle(dc, x + 2, y + size / 2 - bar / 2 + 2, x + bar_thick, y + size / 2 + bar / 2 - 2);
+    SelectObject(dc, right_brush);
     Rectangle(dc, x + size - bar_thick, y + size / 2 - bar / 2 + 2, x + size - 2,
               y + size / 2 + bar / 2 - 2);
 
@@ -888,6 +912,8 @@ void ControllerUi::paintField(HDC dc, int x, int y, int size) {
     draw_ghost_robot(0.90, 0.46, -90.0);
 
     // 轨迹。
+    const int robot_clip = SaveDC(dc);
+    IntersectClipRect(dc, x, y, x + size, y + size);
     if (m_trail_count > 1) {
         HPEN trail_pen = CreatePen(PS_SOLID, 2, RGB(80, 160, 220));
         SelectObject(dc, trail_pen);
@@ -943,6 +969,7 @@ void ControllerUi::paintField(HDC dc, int x, int y, int size) {
             Ellipse(dc, sx - 30, sy - 30, sx + 30, sy + 30);
         }
     }
+    RestoreDC(dc, robot_clip);
 
     HFONT font = CreateFontA(16, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
                              OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,

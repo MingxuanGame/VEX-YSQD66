@@ -16,8 +16,14 @@ struct ConeVisual {
     int color = 2;
 };
 
+struct ToggleVisual {
+    bool seated = true;
+    int color = 2;
+};
+
 struct FieldState {
     static constexpr int kConeCount = 20;
+    static constexpr int kToggleCount = 4;
     bool valid = false;
     double x_m = 0.0;
     double y_m = 0.0;
@@ -29,6 +35,8 @@ struct FieldState {
     double push_position = 0.0;
     ConeVisual cones[kConeCount];
     int cone_count = 0;
+    ToggleVisual toggles[kToggleCount];
+    int toggle_count = 0;
     int mode = 0;
 };
 
