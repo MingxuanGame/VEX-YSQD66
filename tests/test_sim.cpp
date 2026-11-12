@@ -100,6 +100,15 @@ void test_sim() {
     CHECK(cones.hasContact());
     CHECK(std::fabs(cones.get(0).x_m - cone_start_x) > 0.0);
 
+    // 连续向上顶锥，锥最终碰到围边并进入 out_of_bounds。
+    sim_physics::ConeField boundary_cones;
+    double robot_y_m = 2.90;
+    for (int i = 0; i < 300; ++i) {
+        robot_y_m += 0.005;
+        boundary_cones.update(0.01, 0.61, robot_y_m, 0.0, 0.5);
+    }
+    CHECK(boundary_cones.get(0).out_of_bounds);
+
     // ==================== 级联抬升 / 夹爪 / 推板 ====================
     sim::SimMechanism mechanism;
     mechanism.liftTo(0.60, 127);
