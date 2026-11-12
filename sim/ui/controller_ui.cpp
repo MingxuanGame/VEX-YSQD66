@@ -263,7 +263,8 @@ void ControllerUi::setStatusText(const char *line1, const char *line2) {
 
 void ControllerUi::setFieldState(const FieldState &state) {
     m_field = state;
-    if (!state.valid)
+    // 放置阶段拖动只是选位，不能写入场地轨迹。
+    if (!state.valid || m_placement_active)
         return;
 
     bool add = (m_trail_count == 0);

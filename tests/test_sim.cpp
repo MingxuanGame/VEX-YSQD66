@@ -80,6 +80,17 @@ void test_sim() {
         chassis.step(0.01);
     CHECK(std::fabs(chassis.getPoseHeadingDeg()) > 5.0);
 
+    // ==================== 撞锥：底盘把锥推开 ====================
+    chassis.reset();
+    chassis.setCollisionObject(sim_physics::CollisionObject::Cone);
+    lf.move(100);
+    lb.move(100);
+    rf.move(100);
+    rb.move(100);
+    for (int i = 0; i < 20; ++i)
+        chassis.step(0.01);
+    CHECK(chassis.getConeVelocityMps() > 0.0);
+
     // ==================== 级联抬升 / 夹爪 / 推板 ====================
     sim::SimMechanism mechanism;
     mechanism.liftTo(0.60, 127);

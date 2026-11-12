@@ -10,7 +10,7 @@
 | `04-joystick-diagonal.png` | 方向键 `↑ + →`，左摇杆右前方向 |
 | `05-tune-jog.png` | TUNE 模式下按住 L1 + W/S/Q/E 低速点动 |
 | `06-real-field.png` | 按比赛俯视图重建后的场地初始画面 |
-| `07-placement.png` | 启动后的鼠标放置模式 |
+| `07-placement.png` | 启动后的鼠标放置模式，拖拽不留轨迹 |
 | `08-placement-started.png` | 确认位置后开始仿真 |
 | `09-restart.png` | R / RESTART 后回到放置模式 |
 | `10-mouse-start.png` | 鼠标点击 START 开始仿真 |

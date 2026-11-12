@@ -50,11 +50,13 @@ void ChassisSim::setPose(double x_m, double y_m, double heading_deg) {
 }
 
 void ChassisSim::setCollisionObject(CollisionObject obj) {
-    m_current_object = obj;
-    if (obj == CollisionObject::OpponentCar)
+    // 每帧都会重新注入碰撞对象；不能在锥仍接触时反复清零它的速度，
+    // 否则锥永远推不动。只在“刚进入该碰撞类型”时重置对向速度。
+    if (obj == CollisionObject::OpponentCar && m_current_object != obj)
         m_opponent_car_velocity = 0.0;
-    else if (obj == CollisionObject::Cone)
+    else if (obj == CollisionObject::Cone && m_current_object != obj)
         m_cone_velocity = 0.0;
+    m_current_object = obj;
 }
 
 void ChassisSim::setBeingPushedByOpponent(bool pushed, double push_force_nm) {
@@ -92,6 +94,10 @@ double ChassisSim::getPoseHeadingDeg() const {
 
 double ChassisSim::getTotalCurrentMa() const {
     return m_total_current_ma;
+}
+
+double ChassisSim::getConeVelocityMps() const {
+    return m_cone_velocity;
 }
 
 // Legacy simulation API. New code should use the camelCase names above.

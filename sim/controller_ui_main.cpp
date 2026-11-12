@@ -31,6 +31,8 @@ constexpr double kFieldSizeM = 3.6576;
 constexpr double kGoalPositions[9][2] = {{0.655, 0.345}, {0.510, 0.495}, {0.340, 0.655},
                                          {0.190, 0.820}, {0.350, 0.345}, {0.500, 0.350},
                                          {0.660, 0.495}, {0.345, 0.495}, {0.500, 0.655}};
+constexpr double kConePositions[4][2] = {
+    {1.0 / 6.0, 1.0 / 6.0}, {2.0 / 6.0, 2.0 / 6.0}, {4.0 / 6.0, 4.0 / 6.0}, {5.0 / 6.0, 5.0 / 6.0}};
 
 void updateFieldCollision(sim_physics::ChassisSim &physics, const sim::ControllerUi &ui) {
     const double x = physics.getPoseXMeters();
@@ -49,6 +51,18 @@ void updateFieldCollision(sim_physics::ChassisSim &physics, const sim::Controlle
         const double gy = (1.0 - goal[1]) * kFieldSizeM;
         const double dx = x - gx;
         const double dy = y - gy;
+        if (dx * dx + dy * dy < 0.04) {
+            physics.setCollisionObject(sim_physics::CollisionObject::Cone);
+            return;
+        }
+    }
+
+    // 四组起始锥：锥体可以被底盘推开，推开后 ChassisSim 会解除碰撞对象。
+    for (const auto &cone : kConePositions) {
+        const double cx = cone[0] * kFieldSizeM;
+        const double cy = (1.0 - cone[1]) * kFieldSizeM;
+        const double dx = x - cx;
+        const double dy = y - cy;
         if (dx * dx + dy * dy < 0.04) {
             physics.setCollisionObject(sim_physics::CollisionObject::Cone);
             return;

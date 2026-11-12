@@ -48,6 +48,7 @@ public:
     double getPoseYMeters() const;
     double getPoseHeadingDeg() const;
     double getTotalCurrentMa() const;
+    double getConeVelocityMps() const;
 
     // 兼容旧仿真调用；新代码使用上面的 camelCase 接口。
     double get_chassis_velocity_mps() const;
