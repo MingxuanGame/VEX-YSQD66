@@ -34,6 +34,7 @@ endif()
 # 纯软件业务代码：排除依赖 PROS 的硬件适配文件
 # ---------------------------------------------------------------------------
 file(GLOB_RECURSE VEX_CORE_SOURCES
+    "${VEX_ROOT}/src/auton/*.cpp"
     "${VEX_ROOT}/src/collision/*.cpp"
     "${VEX_ROOT}/src/control/*.cpp"
     "${VEX_ROOT}/src/tuning/*.cpp"
@@ -44,6 +45,8 @@ file(GLOB_RECURSE VEX_CORE_SOURCES
 )
 # pros_controller / clock / battery 只在固件构建里使用；host 用 sim 实现替代
 list(FILTER VEX_CORE_SOURCES EXCLUDE REGEX "/pros_controller\\.cpp$")
+list(FILTER VEX_CORE_SOURCES EXCLUDE REGEX "/pros_hardware\\.cpp$")
+list(FILTER VEX_CORE_SOURCES EXCLUDE REGEX "/auton/session\\.cpp$")
 list(FILTER VEX_CORE_SOURCES EXCLUDE REGEX "/src/robot/(clock|battery|display)\\.cpp$")
 # host 时钟实现放进 core，避免静态库链接顺序导致 clock_sim 不被拉入
 list(APPEND VEX_CORE_SOURCES "${VEX_SIM}/compat/clock_sim.cpp")

@@ -1,5 +1,6 @@
 #include "main.h"
 #include "chassis.h"
+#include "auton/session.hpp"
 
 /**
  * A callback function for LLEMU's center button.
@@ -8,13 +9,13 @@
  * "I was pressed!" and nothing.
  */
 void on_center_button() {
-  static bool pressed = false;
-  pressed = !pressed;
-  if (pressed) {
-    pros::lcd::set_text(2, "I was pressed!");
-  } else {
-    pros::lcd::clear_line(2);
-  }
+    static bool pressed = false;
+    pressed = !pressed;
+    if (pressed) {
+        pros::lcd::set_text(2, "I was pressed!");
+    } else {
+        pros::lcd::clear_line(2);
+    }
 }
 
 /**
@@ -24,10 +25,11 @@ void on_center_button() {
  * to keep execution time for this mode under a few seconds.
  */
 void initialize() {
-  pros::lcd::initialize();
-  pros::lcd::set_text(1, "Hello PROS User!");
+    pros::lcd::initialize();
+    pros::lcd::set_text(1, "Hello PROS User!");
 
-  pros::lcd::register_btn1_cb(on_center_button);
+    pros::lcd::register_btn1_cb(on_center_button);
+    auton::initialize();
 }
 
 /**
@@ -35,7 +37,9 @@ void initialize() {
  * the VEX Competition Switch, following either autonomous or opcontrol. When
  * the robot is enabled, this task will exit.
  */
-void disabled() {}
+void disabled() {
+    auton::stop();
+}
 
 /**
  * Runs after initialize(), and before autonomous when connected to the Field
@@ -59,7 +63,9 @@ void competition_initialize() {}
  * will be stopped. Re-enabling the robot will restart the task, not re-start it
  * from where it left off.
  */
-void autonomous() {}
+void autonomous() {
+    auton::run_selected();
+}
 
 /**
  * Runs the operator control code. This function will be started in its own task
@@ -75,14 +81,18 @@ void autonomous() {}
  * task, not resume it from where it left off.
  */
 void opcontrol() {
-  while (true) {
-    pros::lcd::print(0, "%d %d %d",
-                     (pros::lcd::read_buttons() & LCD_BTN_LEFT) >> 2,
-                     (pros::lcd::read_buttons() & LCD_BTN_CENTER) >> 1,
-                     (pros::lcd::read_buttons() & LCD_BTN_RIGHT) >>
-                         0); // Prints status of the emulated screen LCDs
+    auton::begin_opcontrol();
+    while (true) {
+        if (auton::settings_tick()) {
+            pros::delay(20);
+            continue;
+        }
+        pros::lcd::print(0, "%d %d %d", (pros::lcd::read_buttons() & LCD_BTN_LEFT) >> 2,
+                         (pros::lcd::read_buttons() & LCD_BTN_CENTER) >> 1,
+                         (pros::lcd::read_buttons() & LCD_BTN_RIGHT) >>
+                             0); // Prints status of the emulated screen LCDs
 
-    chassis::move();
-    pros::delay(20); // Run for 20 ms then update
-  }
+        chassis::move();
+        pros::delay(20); // Run for 20 ms then update
+    }
 }
