@@ -177,6 +177,18 @@ void ControlLoop::endAuto() {
     m_has_update = false;
 }
 
+void ControlLoop::reset() {
+    stopAll();
+    m_mode.reset();
+    m_drive.setMaxOutput(m_drive.getConfig().max_output);
+    m_input = io::InputState{};
+    m_last_mode = Mode::Drive;
+    m_last_ui_ms = 0;
+    m_last_update_ms = 0;
+    m_has_update = false;
+    m_auto_escape_active = false;
+}
+
 void ControlLoop::renderUI(uint32_t now_ms) {
     if (m_mode.getMode() != Mode::Tune || !m_display)
         return;

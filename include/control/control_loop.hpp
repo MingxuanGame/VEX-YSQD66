@@ -44,6 +44,7 @@ public:
 
     void startAuto();
     void endAuto();
+    void reset();
 
     // 只在 Tune 模式以 100ms 周期刷新；无 Display 时安全 no-op。
     void renderUI(uint32_t now_ms);

@@ -44,6 +44,20 @@ void SimMechanism::update(double dt_sec) {
     }
 }
 
+void SimMechanism::reset() {
+    m_lift_height_m = 0.0;
+    m_lift_velocity_mps = 0.0;
+    m_lift_target_m = 0.0;
+    m_lift_speed_limit_mps = 0.0;
+    m_lift_position_mode = false;
+    m_lift_holding = true;
+    m_clamp_angle_deg = m_config.clamp.open_angle_deg;
+    m_clamp_target_deg = m_config.clamp.open_angle_deg;
+    m_push_position = 0.0;
+    m_push_target = 0.0;
+    m_current_ma = 0.0;
+}
+
 void SimMechanism::updateLift(double dt_sec) {
     const double max_height = m_config.lift.cascade_stages * m_config.lift.stage_height_m;
 

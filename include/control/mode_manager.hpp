@@ -22,6 +22,7 @@ public:
 
     void startAuto();
     void endAuto();
+    void reset();
     void requestSafeWait();
     void clearSafeWait();
 

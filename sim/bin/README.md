@@ -22,6 +22,15 @@ CMake 目标已设置 `RUNTIME_OUTPUT_DIRECTORY` 到 `sim/bin`：
 cmake --build --preset host-debug --target vex_sim_ui
 ```
 
+启动流程：
+
+```text
+启动后进入 PLACEMENT
+鼠标点击/拖拽场地选择底盘位置
+Enter 或点击 START 锁定并开始
+R 或点击 RESTART 复位并重新放置
+```
+
 UI 键位：
 
 ```text
@@ -32,5 +41,7 @@ A/B/X/Y  手柄四色按钮
 1/2      L1/L2
 3/4      R1/R2
 长按 Y   进入 TUNE
+Enter    放置模式确认开始
+R        重启并重新放置
 ESC      退出
 ```

@@ -14,6 +14,7 @@ public:
     explicit SimMechanism(const SimConfig &config = defaultSimConfig());
 
     void update(double dt_sec);
+    void reset();
 
     void liftTo(double pos, int max_speed = 100) override;
     void liftManual(int speed) override;

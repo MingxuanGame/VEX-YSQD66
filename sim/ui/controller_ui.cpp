@@ -28,6 +28,14 @@ constexpr int kControllerX = 630;
 constexpr int kControllerY = 50;
 constexpr int kControllerDrawW = 540;
 constexpr int kControllerDrawH = 420;
+constexpr int kRestartButtonX = kFieldX + 12;
+constexpr int kRestartButtonY = kFieldY + 12;
+constexpr int kRestartButtonW = 120;
+constexpr int kRestartButtonH = 30;
+constexpr int kStartButtonX = kFieldX + kFieldSize - 156;
+constexpr int kStartButtonY = kFieldY + kFieldSize - 46;
+constexpr int kStartButtonW = 144;
+constexpr int kStartButtonH = 32;
 constexpr const char *kWindowClass = "VexSimControllerUi";
 
 constexpr double kFieldSizeM = 3.6576; // 12 ft
@@ -141,7 +149,9 @@ ControllerUi::ControllerUi()
     : m_hwnd(nullptr), m_open(false), m_analog_left_y(0), m_analog_right_x(0), m_arrow_up(false),
       m_arrow_down(false), m_arrow_left(false), m_arrow_right(false), m_tune_mode(false),
       m_jog_left_y(0), m_jog_right_x(0), m_jog_up(false), m_jog_down(false), m_jog_left(false),
-      m_jog_right(false), m_trail_count(0) {
+      m_jog_right(false), m_placement_active(false), m_placement_dragging(false),
+      m_start_requested(false), m_restart_requested(false), m_placement_x_m(0.0),
+      m_placement_y_m(0.0), m_placement_heading_deg(90.0), m_trail_count(0) {
     for (bool &key : m_keys)
         key = false;
     m_status0[0] = '\0';
@@ -285,6 +295,119 @@ void ControllerUi::resetField() {
         InvalidateRect(m_hwnd, nullptr, FALSE);
 }
 
+void ControllerUi::beginPlacement() {
+    m_placement_active = true;
+    m_placement_dragging = false;
+    m_start_requested = false;
+    m_restart_requested = false;
+    m_placement_x_m = 0.50 * kFieldSizeM;
+    m_placement_y_m = 0.12 * kFieldSizeM;
+    m_placement_heading_deg = 90.0;
+    m_trail_count = 0;
+    if (m_hwnd)
+        InvalidateRect(m_hwnd, nullptr, FALSE);
+}
+
+bool ControllerUi::isPlacementActive() const {
+    return m_placement_active;
+}
+
+PlacementPose ControllerUi::getPlacementPose() const {
+    PlacementPose pose;
+    pose.x_m = m_placement_x_m;
+    pose.y_m = m_placement_y_m;
+    pose.heading_deg = m_placement_heading_deg;
+    return pose;
+}
+
+bool ControllerUi::consumeStartRequest() {
+    const bool requested = m_start_requested;
+    m_start_requested = false;
+    return requested;
+}
+
+bool ControllerUi::consumeRestartRequest() {
+    const bool requested = m_restart_requested;
+    m_restart_requested = false;
+    return requested;
+}
+
+bool ControllerUi::clientToDesign(int client_x, int client_y, int *design_x, int *design_y) const {
+    if (!m_hwnd || !design_x || !design_y)
+        return false;
+    RECT client;
+    if (!GetClientRect(m_hwnd, &client))
+        return false;
+    const int width = client.right - client.left;
+    const int height = client.bottom - client.top;
+    if (width <= 0 || height <= 0)
+        return false;
+    *design_x = client_x * kWindowWidth / width;
+    *design_y = client_y * kWindowHeight / height;
+    return true;
+}
+
+bool ControllerUi::pointInField(int design_x, int design_y) const {
+    return design_x >= kFieldX && design_x <= kFieldX + kFieldSize && design_y >= kFieldY &&
+           design_y <= kFieldY + kFieldSize;
+}
+
+void ControllerUi::setPlacementFromClient(int client_x, int client_y) {
+    int dx = 0;
+    int dy = 0;
+    if (!clientToDesign(client_x, client_y, &dx, &dy) || !pointInField(dx, dy))
+        return;
+
+    const double nx = static_cast<double>(dx - kFieldX) / kFieldSize;
+    const double ny = static_cast<double>(kFieldY + kFieldSize - dy) / kFieldSize;
+    const double margin = 0.25;
+    m_placement_x_m = std::max(margin, std::min(kFieldSizeM - margin, nx * kFieldSizeM));
+    m_placement_y_m = std::max(margin, std::min(kFieldSizeM - margin, ny * kFieldSizeM));
+    m_placement_heading_deg = 90.0;
+    m_placement_dragging = true;
+    if (m_hwnd)
+        InvalidateRect(m_hwnd, nullptr, FALSE);
+}
+
+void ControllerUi::handleMouseDown(int client_x, int client_y) {
+    int dx = 0;
+    int dy = 0;
+    if (!clientToDesign(client_x, client_y, &dx, &dy))
+        return;
+
+    const bool on_start = m_placement_active && dx >= kStartButtonX &&
+                          dx <= kStartButtonX + kStartButtonW && dy >= kStartButtonY &&
+                          dy <= kStartButtonY + kStartButtonH;
+    const bool on_restart = dx >= kRestartButtonX && dx <= kRestartButtonX + kRestartButtonW &&
+                            dy >= kRestartButtonY && dy <= kRestartButtonY + kRestartButtonH;
+
+    if (on_restart) {
+        m_restart_requested = true;
+        if (m_hwnd)
+            InvalidateRect(m_hwnd, nullptr, FALSE);
+        return;
+    }
+    if (on_start) {
+        m_placement_active = false;
+        m_placement_dragging = false;
+        m_start_requested = true;
+        if (m_hwnd)
+            InvalidateRect(m_hwnd, nullptr, FALSE);
+        return;
+    }
+    if (m_placement_active && pointInField(dx, dy))
+        setPlacementFromClient(client_x, client_y);
+}
+
+void ControllerUi::handleMouseMove(int client_x, int client_y) {
+    if (m_placement_active && m_placement_dragging)
+        setPlacementFromClient(client_x, client_y);
+}
+
+void ControllerUi::handleMouseUp() {
+    m_placement_dragging = false;
+}
+
 void ControllerUi::setKey(WPARAM key, bool down) {
     if (key == VK_ESCAPE) {
         if (down) {
@@ -294,6 +417,21 @@ void ControllerUi::setKey(WPARAM key, bool down) {
             if (hwnd)
                 DestroyWindow(hwnd);
         }
+        return;
+    }
+
+    if (down && (key == 'R' || key == 'r')) {
+        m_restart_requested = true;
+        if (m_hwnd)
+            InvalidateRect(m_hwnd, nullptr, FALSE);
+        return;
+    }
+    if (down && m_placement_active && (key == VK_RETURN || key == VK_SPACE)) {
+        m_placement_active = false;
+        m_placement_dragging = false;
+        m_start_requested = true;
+        if (m_hwnd)
+            InvalidateRect(m_hwnd, nullptr, FALSE);
         return;
     }
 
@@ -440,6 +578,20 @@ LRESULT CALLBACK ControllerUi::windowProc(HWND hwnd, UINT message, WPARAM wparam
     case WM_SYSKEYUP:
         if (self)
             self->setKey(wparam, false);
+        return 0;
+    case WM_LBUTTONDOWN:
+        if (self)
+            self->handleMouseDown(static_cast<int>(static_cast<short>(LOWORD(lparam))),
+                                  static_cast<int>(static_cast<short>(HIWORD(lparam))));
+        return 0;
+    case WM_MOUSEMOVE:
+        if (self && (wparam & MK_LBUTTON))
+            self->handleMouseMove(static_cast<int>(static_cast<short>(LOWORD(lparam))),
+                                  static_cast<int>(static_cast<short>(HIWORD(lparam))));
+        return 0;
+    case WM_LBUTTONUP:
+        if (self)
+            self->handleMouseUp();
         return 0;
     case WM_ERASEBKGND:
         return 1;
@@ -675,9 +827,13 @@ void ControllerUi::paintField(HDC dc, int x, int y, int size) {
         DeleteObject(trail_pen);
     }
 
-    // 当前机器人。
-    if (m_field.valid) {
-        const double heading = m_field.heading_deg * 3.141592653589793 / 180.0;
+    // 当前机器人。放置阶段直接使用鼠标位置，确认后才交给物理仿真。
+    const bool show_robot = m_field.valid || m_placement_active;
+    const double robot_x = m_placement_active ? m_placement_x_m : m_field.x_m;
+    const double robot_y = m_placement_active ? m_placement_y_m : m_field.y_m;
+    const double robot_heading = m_placement_active ? m_placement_heading_deg : m_field.heading_deg;
+    if (show_robot) {
+        const double heading = robot_heading * 3.141592653589793 / 180.0;
         const double c = std::cos(heading);
         const double s = std::sin(heading);
         const double half_l = 0.23;
@@ -686,8 +842,8 @@ void ControllerUi::paintField(HDC dc, int x, int y, int size) {
             {half_l, half_w}, {-half_l, half_w}, {-half_l, -half_w}, {half_l, -half_w}};
         POINT points[4];
         for (int i = 0; i < 4; ++i) {
-            const double wx = m_field.x_m + local[i][0] * c - local[i][1] * s;
-            const double wy = m_field.y_m + local[i][0] * s + local[i][1] * c;
+            const double wx = robot_x + local[i][0] * c - local[i][1] * s;
+            const double wy = robot_y + local[i][0] * s + local[i][1] * c;
             int sx = 0;
             int sy = 0;
             worldToScreen(wx, wy, x, y, size, &sx, &sy);
@@ -699,9 +855,16 @@ void ControllerUi::paintField(HDC dc, int x, int y, int size) {
         Polygon(dc, points, 4);
         int hx = 0;
         int hy = 0;
-        worldToScreen(m_field.x_m + 0.32 * c, m_field.y_m + 0.32 * s, x, y, size, &hx, &hy);
+        worldToScreen(robot_x + 0.32 * c, robot_y + 0.32 * s, x, y, size, &hx, &hy);
         MoveToEx(dc, (points[0].x + points[3].x) / 2, (points[0].y + points[3].y) / 2, nullptr);
         LineTo(dc, hx, hy);
+        if (m_placement_active) {
+            int sx = 0;
+            int sy = 0;
+            worldToScreen(robot_x, robot_y, x, y, size, &sx, &sy);
+            SelectObject(dc, white_brush);
+            Ellipse(dc, sx - 30, sy - 30, sx + 30, sy + 30);
+        }
     }
 
     HFONT font = CreateFontA(16, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
@@ -711,6 +874,15 @@ void ControllerUi::paintField(HDC dc, int x, int y, int size) {
     SetBkMode(dc, TRANSPARENT);
     drawText(dc, x, y - 32, size, 24, "V5RC OVERRIDE  12' x 12'  |  AUTO 15s  |  DRIVE 1:45",
              RGB(225, 228, 230));
+
+    drawButton(dc, kRestartButtonX, kRestartButtonY, kRestartButtonW, kRestartButtonH, "RESTART",
+               RGB(70, 78, 96), false);
+    if (m_placement_active) {
+        drawButton(dc, kStartButtonX, kStartButtonY, kStartButtonW, kStartButtonH, "START",
+                   RGB(45, 130, 80), false);
+        drawText(dc, x + 12, y + size - 128, size - 24, 24,
+                 "DRAG ROBOT TO PLACE   ENTER START   R RESTART", RGB(235, 238, 240));
+    }
     SelectObject(dc, old_font);
     DeleteObject(font);
 
@@ -894,7 +1066,9 @@ ControllerUi::ControllerUi()
     : m_hwnd(nullptr), m_open(false), m_analog_left_y(0), m_analog_right_x(0), m_arrow_up(false),
       m_arrow_down(false), m_arrow_left(false), m_arrow_right(false), m_tune_mode(false),
       m_jog_left_y(0), m_jog_right_x(0), m_jog_up(false), m_jog_down(false), m_jog_left(false),
-      m_jog_right(false), m_trail_count(0) {
+      m_jog_right(false), m_placement_active(false), m_placement_dragging(false),
+      m_start_requested(false), m_restart_requested(false), m_placement_x_m(0.0),
+      m_placement_y_m(0.0), m_placement_heading_deg(90.0), m_trail_count(0) {
     for (bool &key : m_keys)
         key = false;
     m_status0[0] = '\0';
@@ -936,6 +1110,24 @@ void ControllerUi::setStatusText(const char *, const char *) {}
 void ControllerUi::setFieldState(const FieldState &) {}
 
 void ControllerUi::resetField() {}
+
+void ControllerUi::beginPlacement() {}
+
+bool ControllerUi::isPlacementActive() const {
+    return false;
+}
+
+PlacementPose ControllerUi::getPlacementPose() const {
+    return PlacementPose{};
+}
+
+bool ControllerUi::consumeStartRequest() {
+    return false;
+}
+
+bool ControllerUi::consumeRestartRequest() {
+    return false;
+}
 
 void ControllerUi::setTuneMode(bool) {}
 

@@ -93,7 +93,7 @@ int main() {
     imu.setRandomSeed(12345u);
 
     sim_physics::ChassisSim physics(&lf, &lb, &rf, &rb, &imu);
-    physics.setPose(0.50, 0.88, 90.0); // 底侧起始位，面朝场地中心
+    physics.setPose(0.50, 0.12, 90.0); // 底侧起始位，面朝场地中心
     g_physics = &physics;
     sim::register_physics_tick(physicsTick);
 
@@ -112,12 +112,64 @@ int main() {
     motion_tuning.bindAll(params);
     loop.setParamsManager(&params);
 
-    std::printf("VEX V5 simulator opened. Arrow keys = 8-way joystick, Y long = TUNE, ESC quit.\n");
+    std::printf("VEX V5 simulator opened. PLACEMENT: drag robot, Enter/START; R restart; "
+                "Arrows = 8-way joystick; ESC quit.\n");
+
+    auto resetSimulation = [&]() {
+        physics.reset();
+        mechanism.reset();
+        sim::Battery::reset();
+        sim::init_clock();
+        sim::register_physics_tick(physicsTick);
+        loop.reset();
+        ui.resetField();
+        ui.beginPlacement();
+        ui.setTuneMode(false);
+    };
+
+    auto startSimulation = [&](const sim::PlacementPose &pose) {
+        physics.reset();
+        physics.setPose(pose.x_m, pose.y_m, pose.heading_deg);
+        mechanism.reset();
+        sim::Battery::reset();
+        sim::init_clock();
+        sim::register_physics_tick(physicsTick);
+        loop.reset();
+        ui.resetField();
+        ui.setTuneMode(false);
+    };
+
+    ui.beginPlacement();
 
     while (ui.isOpen()) {
         ui.pump();
         if (!ui.isOpen())
             break;
+
+        if (ui.consumeRestartRequest()) {
+            resetSimulation();
+            continue;
+        }
+
+        if (ui.consumeStartRequest()) {
+            startSimulation(ui.getPlacementPose());
+            continue;
+        }
+
+        if (ui.isPlacementActive()) {
+            const sim::PlacementPose pose = ui.getPlacementPose();
+            sim::FieldState field;
+            field.valid = true;
+            field.x_m = pose.x_m;
+            field.y_m = pose.y_m;
+            field.heading_deg = pose.heading_deg;
+            field.mode = static_cast<int>(control::Mode::Drive);
+            ui.setFieldState(field);
+            ui.setStatusText("PLACEMENT", "Drag robot, then ENTER or click START");
+            ui.render();
+            std::this_thread::sleep_for(std::chrono::milliseconds(16));
+            continue;
+        }
 
         // 固定 1ms 物理步进，渲染约 60Hz。
         updateFieldCollision(physics, ui);
@@ -161,7 +213,7 @@ int main() {
         } else {
             std::snprintf(line0, sizeof(line0), "%s  Arrows = 8-way joystick",
                           modeName(loop.getMode()));
-            std::snprintf(line1, sizeof(line1), "Y long = TUNE   ESC = quit");
+            std::snprintf(line1, sizeof(line1), "R = restart   ESC = quit");
         }
         ui.setStatusText(line0, line1);
         ui.render();

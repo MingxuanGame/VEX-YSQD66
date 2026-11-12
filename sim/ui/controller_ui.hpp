@@ -21,6 +21,12 @@ struct FieldState {
     int mode = 0;
 };
 
+struct PlacementPose {
+    double x_m = 0.0;
+    double y_m = 0.0;
+    double heading_deg = 90.0;
+};
+
 /**
  * @file controller_ui.hpp
  * @brief 仿真器手柄 + 赛场 UI。
@@ -55,6 +61,13 @@ public:
     void setFieldState(const FieldState &state);
     void resetField();
 
+    // 启动前放置：鼠标拖拽选择底盘位置，确认后锁定。
+    void beginPlacement();
+    bool isPlacementActive() const;
+    PlacementPose getPlacementPose() const;
+    bool consumeStartRequest();
+    bool consumeRestartRequest();
+
     // TUNE 下方向键改为参数导航，W/S/Q/E 才驱动；切换时清空残留方向。
     void setTuneMode(bool tune_mode);
 
@@ -70,6 +83,12 @@ private:
     void paintField(HDC dc, int x, int y, int size);
     void paintController(HDC dc);
     void setKey(WPARAM key, bool down);
+    void handleMouseDown(int client_x, int client_y);
+    void handleMouseMove(int client_x, int client_y);
+    void handleMouseUp();
+    void setPlacementFromClient(int client_x, int client_y);
+    bool clientToDesign(int client_x, int client_y, int *design_x, int *design_y) const;
+    bool pointInField(int design_x, int design_y) const;
     void updateArrowAnalog();
     void updateJogAnalog();
 #endif
@@ -94,6 +113,13 @@ private:
     bool m_jog_down;
     bool m_jog_left;
     bool m_jog_right;
+    bool m_placement_active;
+    bool m_placement_dragging;
+    bool m_start_requested;
+    bool m_restart_requested;
+    double m_placement_x_m;
+    double m_placement_y_m;
+    double m_placement_heading_deg;
     char m_status0[64];
     char m_status1[64];
 

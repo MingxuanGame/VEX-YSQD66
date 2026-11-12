@@ -61,6 +61,11 @@ void ModeManager::endAuto() {
     m_mode = Mode::Drive;
 }
 
+void ModeManager::reset() {
+    m_mode = Mode::Drive;
+    m_tune_exit_pending = false;
+}
+
 void ModeManager::requestSafeWait() {
     m_mode = Mode::SafeWait;
 }
