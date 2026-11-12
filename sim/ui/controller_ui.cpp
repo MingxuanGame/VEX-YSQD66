@@ -769,22 +769,42 @@ void ControllerUi::paintField(HDC dc, int x, int y, int size) {
     draw_bucket(x - 8, y + size - bucket + 8);
     draw_bucket(x + size - bucket + 8, y + size - bucket + 8);
 
-    // 4 组红/黄/蓝锥堆，对齐到 2ft 地垫网格交点。
-    const double clusters[4][2] = {{1.0 / 6.0, 1.0 / 6.0},
-                                   {2.0 / 6.0, 2.0 / 6.0},
-                                   {4.0 / 6.0, 4.0 / 6.0},
-                                   {5.0 / 6.0, 5.0 / 6.0}};
-    for (const auto &cluster : clusters) {
-        const int cx = px(cluster[0]);
-        const int cy = py(cluster[1]);
+    // 4 组红/黄/蓝锥堆：位置由 ConeField 物理状态决定，出界后画红叉。
+    auto draw_cone = [&](int cx, int cy, bool out_of_bounds) {
         SelectObject(dc, black_brush);
         Ellipse(dc, cx - 12, cy - 12, cx + 12, cy + 12);
+        if (out_of_bounds) {
+            SelectObject(dc, red_pen);
+            Ellipse(dc, cx - 12, cy - 12, cx + 12, cy + 12);
+            MoveToEx(dc, cx - 8, cy - 8, nullptr);
+            LineTo(dc, cx + 8, cy + 8);
+            MoveToEx(dc, cx + 8, cy - 8, nullptr);
+            LineTo(dc, cx - 8, cy + 8);
+            return;
+        }
         SelectObject(dc, red_brush);
         Ellipse(dc, cx - 11, cy - 4, cx + 1, cy + 8);
         SelectObject(dc, blue_brush);
         Ellipse(dc, cx - 1, cy - 11, cx + 11, cy + 1);
         SelectObject(dc, yellow_brush);
         Ellipse(dc, cx - 5, cy - 11, cx + 5, cy - 1);
+    };
+
+    if (m_field.cone_count > 0) {
+        for (int i = 0; i < m_field.cone_count && i < FieldState::kConeCount; ++i) {
+            const ConeVisual &cone = m_field.cones[i];
+            int cx = 0;
+            int cy = 0;
+            worldToScreen(cone.x_m, cone.y_m, x, y, size, &cx, &cy);
+            draw_cone(cx, cy, cone.out_of_bounds);
+        }
+    } else {
+        const double fallback[4][2] = {{1.0 / 6.0, 1.0 / 6.0},
+                                       {2.0 / 6.0, 2.0 / 6.0},
+                                       {4.0 / 6.0, 4.0 / 6.0},
+                                       {5.0 / 6.0, 5.0 / 6.0}};
+        for (const auto &cluster : fallback)
+            draw_cone(px(cluster[0]), py(cluster[1]), false);
     }
 
     // 三台对方机器人占位，和真实场地的四台起始车对应。

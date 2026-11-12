@@ -8,7 +8,15 @@
 
 namespace sim {
 
+struct ConeVisual {
+    double x_m = 0.0;
+    double y_m = 0.0;
+    bool active = true;
+    bool out_of_bounds = false;
+};
+
 struct FieldState {
+    static constexpr int kConeCount = 4;
     bool valid = false;
     double x_m = 0.0;
     double y_m = 0.0;
@@ -18,6 +26,8 @@ struct FieldState {
     double lift_height_m = 0.0;
     double clamp_angle_deg = 0.0;
     double push_position = 0.0;
+    ConeVisual cones[kConeCount];
+    int cone_count = 0;
     int mode = 0;
 };
 

@@ -150,6 +150,7 @@ ctest --preset host-debug --output-on-failure
 - 启动后先进入放置模式：鼠标点击/拖拽选择底盘位置，拖拽过程不写轨迹；`Enter` 或点击 `START` 后锁定并开始仿真。
 - 左侧 12ft × 12ft 场地：灰色地垫、2ft 网格、9 个得分座、8 个围边节点、4 个三色筒、4 个导入桶、自动分界线、4 组起始锥和底盘轨迹。
 - 得分座与 4 组起始锥都有碰撞体；撞锥会先减速，推得动时锥会被推开并解除碰撞。
+- `ConeField` 负责锥的位移、摩擦和出界状态；出界的锥在 UI 上显示红叉。
 - 右侧：VEX 手柄、模式/位姿/速度/电流/机构状态。
 - 顶部比赛提示：`AUTO 15s | DRIVE 1:45`。
 - `R` 或场上的 `RESTART` 按钮会复位时钟、电池、机构、轨迹并回到放置模式。
@@ -185,7 +186,7 @@ ESC      -> 退出
 - `test_motion.cpp`：里程计、PID、MotionTuning、状态机
 - `test_control.cpp`：模式切换、断联急停、脱困、防推挤
 - `test_library.cpp`：vxmath、io、Robot、碰撞调参
-- `test_sim.cpp`：电池压降、确定性噪声、底盘位姿积分
+- `test_sim.cpp`：电池压降、确定性噪声、底盘位姿积分、锥体碰撞与机构
 - `test_integration.cpp`：物理仿真 + ControlLoop + MotionEngine + 调参的端到端测试
 
 `CMakePresets.json` 使用 PATH 中的 `g++` 和 `ninja`，不再写死本机绝对路径；换机时把这两个工具放进 PATH 即可。也可以手动指定：

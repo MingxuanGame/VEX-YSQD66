@@ -9,6 +9,7 @@
 #include "sim/hardware/sim_mechanism.hpp"
 #include "sim/hardware/sim_motor.hpp"
 #include "sim/physics/chassis_sim.hpp"
+#include "sim/physics/cone_field.hpp"
 #include "sim/ui/controller_ui.hpp"
 #include "tuning/param_apply.hpp"
 #include "tuning/params_manager.hpp"
@@ -31,12 +32,15 @@ constexpr double kFieldSizeM = 3.6576;
 constexpr double kGoalPositions[9][2] = {{0.655, 0.345}, {0.510, 0.495}, {0.340, 0.655},
                                          {0.190, 0.820}, {0.350, 0.345}, {0.500, 0.350},
                                          {0.660, 0.495}, {0.345, 0.495}, {0.500, 0.655}};
-constexpr double kConePositions[4][2] = {
-    {1.0 / 6.0, 1.0 / 6.0}, {2.0 / 6.0, 2.0 / 6.0}, {4.0 / 6.0, 4.0 / 6.0}, {5.0 / 6.0, 5.0 / 6.0}};
 
-void updateFieldCollision(sim_physics::ChassisSim &physics, const sim::ControllerUi &ui) {
+void updateFieldCollision(sim_physics::ChassisSim &physics, const sim::ControllerUi &ui,
+                          sim_physics::ConeField &cones) {
     const double x = physics.getPoseXMeters();
     const double y = physics.getPoseYMeters();
+    const double speed = physics.getChassisVelocityMps();
+    const double heading_rad = physics.getPoseHeadingDeg() * 3.141592653589793 / 180.0;
+    cones.update(0.016, x, y, speed * std::cos(heading_rad), speed * std::sin(heading_rad));
+
     const bool outside = (x < 0.25 || x > kFieldSizeM - 0.25 || y < 0.25 || y > kFieldSizeM - 0.25);
 
     // 顶到场地边界时形成“墙”；操作手反向时解除，允许倒车回场。
@@ -57,16 +61,10 @@ void updateFieldCollision(sim_physics::ChassisSim &physics, const sim::Controlle
         }
     }
 
-    // 四组起始锥：锥体可以被底盘推开，推开后 ChassisSim 会解除碰撞对象。
-    for (const auto &cone : kConePositions) {
-        const double cx = cone[0] * kFieldSizeM;
-        const double cy = (1.0 - cone[1]) * kFieldSizeM;
-        const double dx = x - cx;
-        const double dy = y - cy;
-        if (dx * dx + dy * dy < 0.04) {
-            physics.setCollisionObject(sim_physics::CollisionObject::Cone);
-            return;
-        }
+    // 锥场接触：底盘先减速；锥体本身由 ConeField 负责位移和出界。
+    if (cones.hasContact()) {
+        physics.setCollisionObject(sim_physics::CollisionObject::Cone);
+        return;
     }
     physics.setCollisionObject(sim_physics::CollisionObject::None);
 }
@@ -108,6 +106,7 @@ int main() {
 
     sim_physics::ChassisSim physics(&lf, &lb, &rf, &rb, &imu);
     physics.setPose(0.50, 0.12, 90.0); // 底侧起始位，面朝场地中心
+    sim_physics::ConeField cones;
     g_physics = &physics;
     sim::register_physics_tick(physicsTick);
 
@@ -131,6 +130,7 @@ int main() {
 
     auto resetSimulation = [&]() {
         physics.reset();
+        cones.reset();
         mechanism.reset();
         sim::Battery::reset();
         sim::init_clock();
@@ -144,6 +144,7 @@ int main() {
     auto startSimulation = [&](const sim::PlacementPose &pose) {
         physics.reset();
         physics.setPose(pose.x_m, pose.y_m, pose.heading_deg);
+        cones.reset();
         mechanism.reset();
         sim::Battery::reset();
         sim::init_clock();
@@ -186,7 +187,7 @@ int main() {
         }
 
         // 固定 1ms 物理步进，渲染约 60Hz。
-        updateFieldCollision(physics, ui);
+        updateFieldCollision(physics, ui, cones);
         for (int i = 0; i < 16; ++i) {
             sim::advance_time(0.001);
             mechanism.update(0.001);
@@ -208,6 +209,14 @@ int main() {
         field.lift_height_m = mechanism.getLiftHeightM();
         field.clamp_angle_deg = mechanism.getClampAngleDeg();
         field.push_position = mechanism.getPushPosition();
+        field.cone_count = cones.count();
+        for (int i = 0; i < field.cone_count; ++i) {
+            const sim_physics::ConeBody &cone = cones.get(i);
+            field.cones[i].x_m = cone.x_m;
+            field.cones[i].y_m = cone.y_m;
+            field.cones[i].active = cone.active;
+            field.cones[i].out_of_bounds = cone.out_of_bounds;
+        }
         field.mode = static_cast<int>(loop.getMode());
         ui.setFieldState(field);
 

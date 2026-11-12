@@ -6,6 +6,7 @@
 #include "sim/hardware/sim_mechanism.hpp"
 #include "sim/hardware/sim_motor.hpp"
 #include "sim/physics/chassis_sim.hpp"
+#include "sim/physics/cone_field.hpp"
 
 #include <cmath>
 
@@ -90,6 +91,14 @@ void test_sim() {
     for (int i = 0; i < 20; ++i)
         chassis.step(0.01);
     CHECK(chassis.getConeVelocityMps() > 0.0);
+
+    // ==================== 锥场：接触后产生位移 ====================
+    sim_physics::ConeField cones;
+    const double cone_start_x = cones.get(0).x_m;
+    const double cone_start_y = cones.get(0).y_m;
+    cones.update(0.01, cone_start_x - 0.05, cone_start_y, 0.5, 0.0);
+    CHECK(cones.hasContact());
+    CHECK(std::fabs(cones.get(0).x_m - cone_start_x) > 0.0);
 
     // ==================== 级联抬升 / 夹爪 / 推板 ====================
     sim::SimMechanism mechanism;

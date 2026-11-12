@@ -14,6 +14,7 @@
 | `08-placement-started.png` | 确认位置后开始仿真 |
 | `09-restart.png` | R / RESTART 后回到放置模式 |
 | `10-mouse-start.png` | 鼠标点击 START 开始仿真 |
+| `11-cone-collision.png` | 底盘接触并推动起始锥 |
 
 当前场地是按比赛手册 FO-1 俯视图和用户批注做的结构复刻；拿到官方 CAD 尺寸后继续调整得分座、三色筒和导入桶的精确坐标。
 
