@@ -11,6 +11,8 @@
 
 自动赛套件的按键、参数、两套路线扩展点及实机接入清单见 [自动赛辅助开发套件](docs/auton-kit.md)。正常驾驶仍调用原 `chassis::move()`，完整输入 `↑↑↓↓←→←→BA` 才进入设置。
 
+真机适配器 `ProsChassis` / `ProsImu` / `ProsMechanism` 目前只是**精简接线级**，未接入主循环，也不是比赛级安全实现，详见 [真机适配器状态](docs/hardware-adapters.md)。
+
 ## 开发规范与编辑器配置
 
 - `.clang-format`：C/C++ 四空格缩进、大括号不换行、函数间空行；`.clang-format-ignore` 为独立 clang-format 排除 SDK、固件和生成物，编辑器中也仅格式化自有代码。

@@ -48,6 +48,8 @@ list(FILTER VEX_CORE_SOURCES EXCLUDE REGEX "/pros_controller\\.cpp$")
 list(FILTER VEX_CORE_SOURCES EXCLUDE REGEX "/pros_hardware\\.cpp$")
 list(FILTER VEX_CORE_SOURCES EXCLUDE REGEX "/auton/session\\.cpp$")
 list(FILTER VEX_CORE_SOURCES EXCLUDE REGEX "/src/robot/(clock|battery|display)\\.cpp$")
+# Pros* 真机适配器只参与固件构建，host 使用 sim/ 下的 Fake 实现
+list(FILTER VEX_CORE_SOURCES EXCLUDE REGEX "/src/robot/pros_(chassis|imu|mechanism)\\.cpp$")
 # host 时钟实现放进 core，避免静态库链接顺序导致 clock_sim 不被拉入
 list(APPEND VEX_CORE_SOURCES "${VEX_SIM}/compat/clock_sim.cpp")
 
