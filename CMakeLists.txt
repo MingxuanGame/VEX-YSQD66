@@ -34,7 +34,7 @@ endif()
 # 纯软件业务代码：排除依赖 PROS 的硬件适配文件
 # ---------------------------------------------------------------------------
 file(GLOB_RECURSE VEX_CORE_SOURCES
-    "${VEX_ROOT}/src/auton/*.cpp"
+    "${VEX_ROOT}/src/macro/*.cpp"
     "${VEX_ROOT}/src/collision/*.cpp"
     "${VEX_ROOT}/src/control/*.cpp"
     "${VEX_ROOT}/src/tuning/*.cpp"
@@ -45,8 +45,7 @@ file(GLOB_RECURSE VEX_CORE_SOURCES
 )
 # pros_controller / clock / battery 只在固件构建里使用；host 用 sim 实现替代
 list(FILTER VEX_CORE_SOURCES EXCLUDE REGEX "/pros_controller\\.cpp$")
-list(FILTER VEX_CORE_SOURCES EXCLUDE REGEX "/pros_hardware\\.cpp$")
-list(FILTER VEX_CORE_SOURCES EXCLUDE REGEX "/auton/session\\.cpp$")
+list(FILTER VEX_CORE_SOURCES EXCLUDE REGEX "/macro/(session|screen)\\.cpp$")
 list(FILTER VEX_CORE_SOURCES EXCLUDE REGEX "/src/robot/(clock|battery|display)\\.cpp$")
 # Pros* 真机适配器只参与固件构建，host 使用 sim/ 下的 Fake 实现
 list(FILTER VEX_CORE_SOURCES EXCLUDE REGEX "/src/robot/pros_(chassis|imu|mechanism)\\.cpp$")

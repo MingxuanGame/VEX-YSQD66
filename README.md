@@ -5,11 +5,11 @@
 ## 当前阶段
 
 - PC 仿真、控制层、碰撞/调参测试可用；`sim/bin` 下有最新可执行文件。
-- 真机保持原手动底盘入口；`autonomous()` 已接入独立的六步自动赛辅助套件，从 SD 读取路线参数执行。抓手、升降、IMU 和撞桩反馈尚为 TODO，适配器未就绪时拒绝起跑。该套件与仿真 `ControlLoop` 独立。
+- 真机支持手动底盘和 Brain 触屏宏录制/回放：3 秒准备、20ms 一帧、14.5 秒动作和 0.5 秒停止重置，编号递增保存到 SD。当前仅转换/执行底盘指令，其他机构留 TODO；`autonomous()` 留空。该模块与仿真 `ControlLoop` 独立。
 - 仿真路线文件自动赛、多车动态碰撞尚未实现。
 - 在硬件方案确定前，请把本仓库当作“仿真 + 控制层验证工程”，不要直接当作比赛固件上传。
 
-自动赛套件的按键、参数、两套路线扩展点及实机接入清单见 [自动赛辅助开发套件](docs/auton-kit.md)。正常驾驶仍调用原 `chassis::move()`，完整输入 `↑↑↓↓←→←→BA` 才进入设置。
+启动后 Brain 显示“新建宏录制”和“使用宏”。录制/回放限于脱离场控且启用的手动练习；宏文件格式、微调示例、停止行为和机构扩展点见 [宏录制协议](docs/macro-protocol.md)。Home 页面可正常驾驶，列表和结果页保持停车。
 
 真机适配器 `ProsChassis` / `ProsImu` / `ProsMechanism` 目前只是**精简接线级**，未接入主循环，也不是比赛级安全实现，详见 [真机适配器状态](docs/hardware-adapters.md)。
 
@@ -192,6 +192,7 @@ ESC      -> 退出
 - `test_library.cpp`：vxmath、io、Robot、碰撞调参
 - `test_sim.cpp`：电池压降、确定性噪声、底盘位姿积分、锥体碰撞与机构
 - `test_integration.cpp`：物理仿真 + ControlLoop + MotionEngine + 调参的端到端测试
+- `test_macro.cpp`：底盘指令转换、3 秒屏蔽、725 帧录放、500ms 重置、取消/断联/故障、CSV 校验与禁止覆盖
 
 `CMakePresets.json` 使用 PATH 中的 `g++` 和 `ninja`，不再写死本机绝对路径；换机时把这两个工具放进 PATH 即可。也可以手动指定：
 

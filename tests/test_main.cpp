@@ -7,7 +7,7 @@ void test_control();
 void test_library();
 void test_sim();
 void test_integration();
-void test_auton();
+void test_macro();
 
 int g_test_failures = 0;
 
@@ -19,7 +19,7 @@ int main() {
     test_library();
     test_sim();
     test_integration();
-    test_auton();
+    test_macro();
 
     if (g_test_failures == 0) {
         std::printf("all host tests passed\n");
