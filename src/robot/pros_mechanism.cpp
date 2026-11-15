@@ -1,6 +1,7 @@
 #include "robot/pros_mechanism.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 namespace robot {
 
@@ -13,12 +14,23 @@ void ProsMechanism::setConfig(const ProsMechanismConfig &config) {
 void ProsMechanism::liftTo(double pos, int max_speed) {
     if (!m_config.lift_motor)
         return;
+    const double current = m_config.lift_motor->get_position();
+    if ((pos > current && m_config.lift_upper_limit && m_config.lift_upper_limit()) ||
+        (pos < current && m_config.lift_lower_limit && m_config.lift_lower_limit())) {
+        liftHold();
+        return;
+    }
     m_config.lift_motor->move_absolute(pos, std::clamp(max_speed, 0, 127));
 }
 
 void ProsMechanism::liftManual(int speed) {
     if (!m_config.lift_motor)
         return;
+    if ((speed > 0 && m_config.lift_upper_limit && m_config.lift_upper_limit()) ||
+        (speed < 0 && m_config.lift_lower_limit && m_config.lift_lower_limit())) {
+        liftHold();
+        return;
+    }
     const int voltage_mv = std::clamp(speed, -127, 127) * 12000 / 127;
     m_config.lift_motor->move_voltage(voltage_mv);
 }
@@ -62,11 +74,17 @@ void ProsMechanism::pushRetract() {
 }
 
 double ProsMechanism::getCurrentMa() const {
-    if (m_config.current_ma)
-        return m_config.current_ma();
-    if (m_config.lift_motor)
-        return static_cast<double>(m_config.lift_motor->get_current_draw());
-    return 0.0;
+    double value = 0.0;
+    if (m_config.current_ma) {
+        value = m_config.current_ma();
+    } else if (m_config.lift_motor) {
+        value = static_cast<double>(m_config.lift_motor->get_current_draw());
+    }
+    return (std::isfinite(value) && value >= 0.0) ? value : 0.0;
+}
+
+bool ProsMechanism::isHealthy() const {
+    return !m_config.fault || !m_config.fault();
 }
 
 } // namespace robot

@@ -19,6 +19,7 @@ public:
     double getHeading() const override;
     double getRotation() const override;
     double getGyroRateZ() const override;
+    bool isHealthy() const override;
 
 private:
     pros::Imu *m_imu;

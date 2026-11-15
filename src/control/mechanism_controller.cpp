@@ -61,4 +61,8 @@ double MechanismController::getCurrentMa() const {
     return m_mechanism ? m_mechanism->getCurrentMa() : 0.0;
 }
 
+bool MechanismController::isHealthy() const {
+    return m_mechanism ? m_mechanism->isHealthy() : true;
+}
+
 } // namespace control

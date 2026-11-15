@@ -28,6 +28,10 @@ struct DriveConfig {
     int escape_phase_ms = 150;
     int tune_max_output = 35; // Tune 模式下按住 L1 的低速点动上限
 
+    // 每 20ms 允许的功率变化量；0 表示不做斜率限制。
+    // 40 约等于 0→100% 需要 3 个控制周期，降低起步瞬间的齿轮/轮胎冲击。
+    int max_delta_per_update = 40;
+
     // 全局电流预算：四轮 + 机构的总电流不要顶到主控 20A 限流。
     double max_total_current_ma = 20000.0;
     double aux_current_reserve_ma = 3000.0; // 抬升/夹爪预留

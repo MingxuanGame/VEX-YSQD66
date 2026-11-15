@@ -6,6 +6,7 @@
 #include "robot/chassis.hpp"
 #include "robot/imu.hpp"
 #include "vxmath/math_utils.hpp"
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 
@@ -19,6 +20,18 @@ int clampOutput(int value, int limit) {
     if (value < -limit)
         return -limit;
     return value;
+}
+
+int limitDelta(int target, int previous, int max_delta) {
+    if (max_delta <= 0)
+        return target;
+    const int delta = std::clamp(target - previous, -max_delta, max_delta);
+    return previous + delta;
+}
+
+bool validBatteryMv(int voltage_mv) {
+    // V5 电池的正常工作范围；超出时宁可不补偿，也不要把异常值放大成输出。
+    return voltage_mv >= 6000 && voltage_mv <= 16000;
 }
 
 } // namespace
@@ -38,6 +51,10 @@ void DriveController::update(const io::InputState &input, uint32_t now_ms) {
         stop();
         return;
     }
+    if (!m_chassis->isHealthy()) {
+        stop();
+        return;
+    }
 
     // 物理底牌：按住 L1+L2 时无视摇杆，执行受限的脱困摆动。
     if (input.l1.pressed() && input.l2.pressed()) {
@@ -52,7 +69,7 @@ void DriveController::update(const io::InputState &input, uint32_t now_ms) {
 
     // 航向保持 Assist：按住 X 时忽略手动摇杆的 turn，锁住按下瞬间的航向。
     // 注意：这里做的是“保持当前航向”，真正的锥体目标航向应由视觉/距离传感器提供。
-    if (m_imu && input.x.pressed()) {
+    if (m_imu && input.x.pressed() && m_imu->isHealthy()) {
         const double current_heading = m_imu->getHeading();
         if (vxmath::isValidAngle(current_heading)) {
             if (!m_assist_active) {
@@ -89,8 +106,17 @@ void DriveController::update(const io::InputState &input, uint32_t now_ms) {
     const bool operator_hard = std::abs(input.leftY) > m_config.hard_push_threshold ||
                                std::abs(input.rightX) > m_config.hard_push_threshold;
 
-    const double current = (m_chassis->getLeftCurrent() + m_chassis->getRightCurrent()) / 2.0;
-    const double velocity = (m_chassis->getLeftVelocity() + m_chassis->getRightVelocity()) / 2.0;
+    // 反馈每周期只采样一次；无效值不参与防推挤和电流预算。
+    const double raw_left_current = m_chassis->getLeftCurrent();
+    const double raw_right_current = m_chassis->getRightCurrent();
+    const double raw_left_velocity = m_chassis->getLeftVelocity();
+    const double raw_right_velocity = m_chassis->getRightVelocity();
+    const double left_current = std::isfinite(raw_left_current) ? raw_left_current : 0.0;
+    const double right_current = std::isfinite(raw_right_current) ? raw_right_current : 0.0;
+    const double left_velocity = std::isfinite(raw_left_velocity) ? raw_left_velocity : 0.0;
+    const double right_velocity = std::isfinite(raw_right_velocity) ? raw_right_velocity : 0.0;
+    const double current = (left_current + right_current) / 2.0;
+    const double velocity = (left_velocity + right_velocity) / 2.0;
 
     bool anti_push = false;
     if (!operator_hard && current > m_config.anti_push_current_ma &&
@@ -113,7 +139,7 @@ void DriveController::update(const io::InputState &input, uint32_t now_ms) {
     // 先补偿再做电流预算，避免补偿后的输出绕过总电流限制。
     if (m_battery) {
         const int voltage_mv = m_battery->getVoltageMv();
-        if (voltage_mv > 0) {
+        if (validBatteryMv(voltage_mv)) {
             double scale = static_cast<double>(cfg::kNominalBatteryMv) / voltage_mv;
             if (scale < 1.0)
                 scale = 1.0;
@@ -129,13 +155,13 @@ void DriveController::update(const io::InputState &input, uint32_t now_ms) {
     // 保持左右差速比不变；机构电流由 Mechanism::getCurrentMa() 提供。
     m_last_current_scale = 1.0;
     if (m_config.max_total_current_ma > 0.0) {
-        const double drive_current =
-            std::abs(m_chassis->getLeftCurrent()) + std::abs(m_chassis->getRightCurrent());
-        double aux_current = m_aux_current_ma;
-        if (aux_current < m_config.aux_current_reserve_ma) {
-            aux_current = m_config.aux_current_reserve_ma;
-        }
-        const double total_current = drive_current + aux_current;
+        const double drive_current = std::abs(left_current) + std::abs(right_current);
+        const double aux_current =
+            std::isfinite(m_aux_current_ma) && m_aux_current_ma > 0.0 ? m_aux_current_ma : 0.0;
+        const double effective_aux =
+            std::max(aux_current,
+                     m_config.aux_current_reserve_ma > 0.0 ? m_config.aux_current_reserve_ma : 0.0);
+        const double total_current = drive_current + effective_aux;
         if (total_current > m_config.max_total_current_ma) {
             m_last_current_scale = m_config.max_total_current_ma / total_current;
             left = static_cast<int>(left * m_last_current_scale);
@@ -143,8 +169,10 @@ void DriveController::update(const io::InputState &input, uint32_t now_ms) {
         }
     }
 
-    m_last_left = clampOutput(left, m_active_max_output);
-    m_last_right = clampOutput(right, m_active_max_output);
+    const int target_left = clampOutput(left, m_active_max_output);
+    const int target_right = clampOutput(right, m_active_max_output);
+    m_last_left = limitDelta(target_left, m_last_left, m_config.max_delta_per_update);
+    m_last_right = limitDelta(target_right, m_last_right, m_config.max_delta_per_update);
     m_chassis->setDrive(m_last_left, m_last_right);
 }
 
@@ -233,7 +261,7 @@ void DriveController::setBattery(robot::Battery *battery) {
 }
 
 void DriveController::setAuxCurrentMa(double current_ma) {
-    m_aux_current_ma = (current_ma > 0.0) ? current_ma : 0.0;
+    m_aux_current_ma = (std::isfinite(current_ma) && current_ma > 0.0) ? current_ma : 0.0;
 }
 
 void DriveController::setAssistTargetHeading(double heading_deg) {

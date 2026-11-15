@@ -43,6 +43,16 @@ public:
      * @note 自动赛开始前必须调用，否则里程计会继承上一场的脏数据。
      */
     virtual void tarePosition() = 0;
+
+    /**
+     * @brief 最近一次驱动命令是否成功。
+     *
+     * 默认返回 true，兼容仿真/Fake 实现；真机适配器应在 SDK 写入失败时返回 false。
+     * ControlLoop 只把它作为进入 SafeWait 的依据，不把 0 反馈当成实测值。
+     */
+    virtual bool isHealthy() const {
+        return true;
+    }
 };
 
 } // namespace robot

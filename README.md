@@ -13,6 +13,8 @@
 
 真机适配器 `ProsChassis` / `ProsImu` / `ProsMechanism` 目前只是**精简接线级**，未接入主循环，也不是比赛级安全实现，详见 [真机适配器状态](docs/hardware-adapters.md)。
 
+其他组员可以修改底盘和宏模块，本边会同步适配；接口边界见 [协作边界](docs/collaboration.md)。后续优先级见 [方向清单](docs/roadmap.md)。
+
 ## 开发规范与编辑器配置
 
 - `.clang-format`：C/C++ 四空格缩进、大括号不换行、函数间空行；`.clang-format-ignore` 为独立 clang-format 排除 SDK、固件和生成物，编辑器中也仅格式化自有代码。

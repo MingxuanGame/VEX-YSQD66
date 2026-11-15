@@ -32,6 +32,7 @@ public:
     void hold();
 
     double getCurrentMa() const;
+    bool isHealthy() const;
 
 private:
     robot::Mechanism *m_mechanism = nullptr;

@@ -12,6 +12,7 @@ class Controller;
 namespace robot {
 class Display;
 class Mechanism;
+class Imu;
 } // namespace robot
 
 namespace tuning {
@@ -60,6 +61,7 @@ private:
 
     io::Controller *m_controller;
     robot::Chassis *m_chassis;
+    robot::Imu *m_imu;
 
     io::InputState m_input;
     ModeManager m_mode;

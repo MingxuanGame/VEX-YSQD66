@@ -9,6 +9,7 @@
 #include "robot/mechanism.hpp"
 #include "tuning/params_manager.hpp"
 
+#include <cstdlib>
 #include <cstring>
 
 namespace {
@@ -77,6 +78,11 @@ struct ControlFakeChassis : robot::Chassis {
     double left_current = 0.0;
     double right_current = 0.0;
     double velocity = 0.0;
+    bool healthy = true;
+
+    bool isHealthy() const override {
+        return healthy;
+    }
 
     void setDrive(int l, int r) override {
         left = l;
@@ -117,6 +123,11 @@ struct ControlFakeChassis : robot::Chassis {
 
 struct ControlFakeImu : robot::Imu {
     double heading = 0.0;
+    bool healthy = true;
+
+    bool isHealthy() const override {
+        return healthy;
+    }
 
     double getHeading() const override {
         return heading;
@@ -148,6 +159,11 @@ struct ControlFakeMechanism : robot::Mechanism {
     int lift_down = 0;
     int lift_hold = 0;
     double current_ma = 0.0;
+    bool healthy = true;
+
+    bool isHealthy() const override {
+        return healthy;
+    }
 
     void liftTo(double, int) override {}
 
@@ -227,6 +243,26 @@ void test_control() {
     CHECK(chassis.left > 0);
     CHECK(chassis.left <= 100);
     CHECK(chassis.right > 0);
+
+    // 底盘/IMU/机构健康信号失败时必须进入 SafeWait；恢复健康后由 reset 回到 Drive。
+    controller.left_y = 0;
+    const auto expect_fault = [&](bool &healthy) {
+        healthy = false;
+        now += 20;
+        loop.update(now);
+        CHECK(loop.getMode() == control::Mode::SafeWait);
+        CHECK(chassis.left == 0 && chassis.right == 0);
+        healthy = true;
+        loop.reset();
+        CHECK(loop.getMode() == control::Mode::Drive);
+    };
+    expect_fault(chassis.healthy);
+    expect_fault(imu.healthy);
+    expect_fault(mechanism.healthy);
+
+    controller.left_y = 50;
+    now += 20;
+    loop.update(now);
 
     // Drive 模式并发机构控制：R1 夹爪、R2 推板、L1 抬升。
     controller.r1 = true;
@@ -361,8 +397,10 @@ void test_control() {
 
     // 操作手猛推杆 -> 防推挤立即让步。
     controller.left_y = 100;
-    now += 20;
-    loop.update(now);
+    for (int i = 0; i < 3; ++i) {
+        now += 20;
+        loop.update(now);
+    }
     CHECK(chassis.left > 0);
 
     // 电流预算：四轮 24A + 机构 5A，超过 20A 后按比例缩小。
@@ -405,6 +443,37 @@ void test_control() {
     CHECK(assist_driver.isAssistActive());
     CHECK(assist_driver.getLastLeftOutput() < assist_driver.getLastRightOutput());
 
+    // IMU 未就绪时 Assist 必须退出，不能拿 0 度继续修航向。
+    assist_imu.healthy = false;
+    assist_input.x.update(true, now + 50);
+    assist_driver.update(assist_input, now + 50);
+    CHECK(!assist_driver.isAssistActive());
+
+    // 底盘健康信号失败时直接停车。
+    ControlFakeChassis unhealthy_chassis;
+    unhealthy_chassis.healthy = false;
+    control::DriveController unhealthy_driver(unhealthy_chassis);
+    io::InputState unhealthy_input;
+    unhealthy_input.isConnected = true;
+    unhealthy_input.leftY = 100;
+    unhealthy_driver.update(unhealthy_input, now);
+    CHECK(unhealthy_chassis.left == 0 && unhealthy_chassis.right == 0);
+
+    // 输出斜率限制：单周期最多变化 max_delta_per_update。
+    ControlFakeChassis slew_chassis;
+    control::DriveConfig slew_config;
+    slew_config.deadzone = 0;
+    slew_config.expo = 1.0;
+    slew_config.max_delta_per_update = 20;
+    control::DriveController slew_driver(slew_chassis, slew_config);
+    io::InputState slew_input;
+    slew_input.isConnected = true;
+    slew_input.leftY = 100;
+    slew_driver.update(slew_input, now);
+    CHECK(std::abs(slew_chassis.left) <= 20);
+    slew_driver.update(slew_input, now + 20);
+    CHECK(std::abs(slew_chassis.left) <= 40);
+
     // 低电压手动补偿：10V 时 50 输出应放大到约 60。
     ControlFakeChassis low_battery_chassis;
     ControlFakeBattery low_battery;
@@ -412,6 +481,7 @@ void test_control() {
     control::DriveConfig low_battery_config;
     low_battery_config.deadzone = 0;
     low_battery_config.expo = 1.0;
+    low_battery_config.max_delta_per_update = 127;
     control::DriveController low_battery_driver(low_battery_chassis, low_battery_config);
     low_battery_driver.setBattery(&low_battery);
     io::InputState low_battery_input;

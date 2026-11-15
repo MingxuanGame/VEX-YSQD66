@@ -12,10 +12,10 @@ namespace control {
 
 ControlLoop::ControlLoop(io::Controller &controller, robot::Chassis &chassis, robot::Imu &imu,
                          robot::Battery *battery)
-    : m_controller(&controller), m_chassis(&chassis), m_input(), m_mode(), m_drive(chassis),
-      m_mechanism(), m_motion(chassis, imu, battery), m_params(nullptr), m_display(nullptr),
-      m_last_mode(Mode::Drive), m_last_ui_ms(0), m_last_update_ms(0), m_has_update(false),
-      m_auto_escape_active(false) {
+    : m_controller(&controller), m_chassis(&chassis), m_imu(&imu), m_input(), m_mode(),
+      m_drive(chassis), m_mechanism(), m_motion(chassis, imu, battery), m_params(nullptr),
+      m_display(nullptr), m_last_mode(Mode::Drive), m_last_ui_ms(0), m_last_update_ms(0),
+      m_has_update(false), m_auto_escape_active(false) {
     m_drive.setImu(&imu);
     m_drive.setBattery(battery);
 }
@@ -81,6 +81,14 @@ void ControlLoop::update(uint32_t now_ms) {
     }
     m_last_update_ms = now_ms;
     m_has_update = true;
+
+    // 真机适配器可报告驱动失败、IMU 未就绪或机构故障；不能把这些当正常数据继续跑。
+    if (!m_chassis->isHealthy() || (m_imu && !m_imu->isHealthy()) || !m_mechanism.isHealthy()) {
+        stopAll();
+        m_mode.requestSafeWait();
+        m_last_mode = Mode::SafeWait;
+        return;
+    }
 
     io::readInput(*m_controller, m_input, now_ms);
 

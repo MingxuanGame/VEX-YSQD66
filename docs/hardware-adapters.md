@@ -8,32 +8,36 @@
 ## 已有内容
 
 - `ProsChassis`
-  - `setDrive`：-127..127 换算为 ±12000mV，调用 `chassis::set_voltage`
+  - `setDrive`：-127..127 直接交给 `chassis::set_power`
   - `stop`：调用 `chassis::stop`
-  - 电流、速度、位置：读取 `chassis::readings`
-  - `tarePosition`：软件零点，不物理清零编码器
+  - `isHealthy`：记录 `chassis::set_power` 返回失败
+  - 电流、速度、位置：当前 chassis 接口没有反馈，返回 0
+  - `tarePosition`：当前无编码器反馈，空操作
 - `ProsImu`
   - 包装 `pros::Imu` 的 heading / rotation / gyro Z
+  - `isHealthy`：检查 PROS status 且不在校准中
   - 空指针和非有限值返回 0
 - `ProsMechanism`
   - 升降使用一个 `pros::Motor*`
   - 夹爪、推板、电流反馈通过静态回调注入
+  - `isHealthy`、升降上下限和总故障通过可选回调注入
   - 不猜测未确定的端口和传动
 
 ## 尚未达到比赛级
 
+- chassis 没有暴露电流、速度、编码器反馈，`ProsChassis` 无法做防推挤或运动闭环
 - 没有物理编码器 tare
 - `setDrive` 和 `liftTo` 无法向控制层返回硬件失败
-- IMU 没有校准/在线状态上报，错误会被 0 掩盖
-- 没有反馈缓存，单个控制周期可能多次读取四电机
-- 升降没有软/硬限位、电流、堵转和到位超时检查
+- IMU 状态已接入，但实机校准和故障验证未完成
+- 升降限位只提供回调入口，阈值、方向和堵转/电流超时仍需实机标定
 - 夹爪/推板回调没有统一到位反馈
 - 没有实机 HIL 验证
 
 ## 边界
 
-- `src/auton/*` 和 `src/main.cpp` 未修改
-- 适配器尚未接入 `opcontrol` 主循环
+- `src/main.cpp` 目前由 `macrorec` 接管手动底盘，适配器尚未接入主循环
+- `ProsChassis` 的反馈 getter 返回 0，只能作为“不可用”占位
+- `ControlLoop` 会在底盘、IMU 或机构报告不健康时进入 SafeWait
 - `pros build` 通过仅代表编译和链接通过，不代表比赛可靠性
 
 ## 下一步

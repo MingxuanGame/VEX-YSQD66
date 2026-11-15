@@ -39,6 +39,15 @@ public:
     virtual double getCurrentMa() const {
         return 0.0;
     }
+
+    /**
+     * @brief 机构是否没有限位/故障回调报告的故障。
+     *
+     * 默认返回 true 兼容仿真；ProsMechanism 可通过注入的 fault 回调覆盖。
+     */
+    virtual bool isHealthy() const {
+        return true;
+    }
 };
 
 } // namespace robot

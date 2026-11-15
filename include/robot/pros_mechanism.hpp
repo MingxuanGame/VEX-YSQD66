@@ -30,6 +30,11 @@ struct ProsMechanismConfig {
 
     // 可选：机构总电流反馈，单位 mA；为空时只读升降电机电流。
     double (*current_ma)() = nullptr;
+
+    // 可选：升降限位和总故障回调；返回 true 表示已触发/存在故障。
+    bool (*lift_upper_limit)() = nullptr;
+    bool (*lift_lower_limit)() = nullptr;
+    bool (*fault)() = nullptr;
 };
 
 class ProsMechanism final : public Mechanism {
@@ -51,6 +56,7 @@ public:
     void pushRetract() override;
 
     double getCurrentMa() const override;
+    bool isHealthy() const override;
 
 private:
     ProsMechanismConfig m_config;

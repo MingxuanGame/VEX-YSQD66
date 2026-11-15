@@ -225,6 +225,7 @@ void test_storage() {
     const auto source = directory / "macro_000001.csv";
     std::ifstream stream(source, std::ios::binary);
     const std::string text((std::istreambuf_iterator<char>(stream)), {});
+    stream.close(); // Windows 上必须先释放文件句柄，否则末尾 remove_all 会失败。
     const auto corrupt = directory / "corrupt.csv";
     const auto load_text = [&](const std::string &modified) {
         std::ofstream output(corrupt, std::ios::binary);
