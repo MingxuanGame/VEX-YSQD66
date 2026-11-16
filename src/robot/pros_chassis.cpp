@@ -14,6 +14,9 @@ void ProsChassis::stop(bool brake) {
     // chassis::stop() 当前固定使用主动刹车；保留接口参数以便底盘模块以后扩展。
     (void)brake;
     chassis::stop();
+    // stop 是安全状态；如果上一次 set_power 因禁用/SDK 暂时失败，
+    // 不能让 ControlLoop 永久卡在 SafeWait。下一次 setDrive 会重新检测。
+    m_healthy = true;
 }
 
 // 新 chassis 接口没有暴露电流、速度或编码器反馈，不能在适配器里伪造这些值。

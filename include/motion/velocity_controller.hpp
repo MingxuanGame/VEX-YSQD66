@@ -23,6 +23,7 @@ public:
     void setKp(double kp);
     void setKi(double ki);
     void setKd(double kd);
+    void setDerivativeFilterTau(double tau_sec);
 
 private:
     void applyGains();

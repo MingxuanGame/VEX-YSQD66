@@ -1,0 +1,28 @@
+#pragma once
+
+#include "robot/wheel_chassis.hpp"
+
+namespace robot {
+
+/**
+ * @file pros_wheel_chassis.hpp
+ * @brief 将四轮 chassis:: 接口适配为 robot::WheelChassis 的参考头文件。
+ *
+ * 依赖未来 chassis 提供：
+ *   set_wheel_power / set_wheel_velocity / read_state / tare_position / isHealthy
+ * 当前生产 chassis 还没有这些接口，所以本文件只是样板，不参与编译。
+ */
+class ProsWheelChassis final : public WheelChassis {
+public:
+    ProsWheelChassis() = default;
+
+    bool set_wheel_velocity(const std::array<double, 4> &rpm) override;
+    bool set_wheel_power(const std::array<int, 4> &power) override;
+    bool read_wheel_state(WheelSnapshot &out) override;
+    bool tare_position() override;
+    void poll(std::uint32_t now_ms) override;
+    void stop(bool brake = true) override;
+    bool is_healthy() const override;
+};
+
+} // namespace robot

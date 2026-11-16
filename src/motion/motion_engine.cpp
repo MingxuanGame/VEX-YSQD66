@@ -18,6 +18,12 @@ constexpr double kMaxDtSec = 0.1;
 constexpr double kMinDtSec = 0.001;
 constexpr uint32_t kMinTimeoutMs = 300;
 constexpr uint32_t kMaxTimeoutMs = 15000;
+constexpr int kMinBatteryMv = 6000;
+constexpr int kMaxBatteryMv = 16000;
+
+bool validBatteryMv(int voltage_mv) {
+    return voltage_mv >= kMinBatteryMv && voltage_mv <= kMaxBatteryMv;
+}
 
 int clampSpeed(int speed) {
     if (speed > cfg::kOutputLimit)
@@ -60,6 +66,10 @@ MotionEngine::MotionEngine(robot::Chassis &chassis, robot::Imu &imu, robot::Batt
 void MotionEngine::startDrive(double distance_inch, int max_speed) {
     if (!m_chassis || !m_imu)
         return;
+    if (!m_chassis->isHealthy() || !m_imu->isHealthy()) {
+        enterFault();
+        return;
+    }
     if (!std::isfinite(distance_inch))
         return;
 
@@ -96,6 +106,10 @@ void MotionEngine::startDrive(double distance_inch, int max_speed) {
 void MotionEngine::startTurn(double target_angle_deg, int max_speed) {
     if (!m_chassis || !m_imu)
         return;
+    if (!m_chassis->isHealthy() || !m_imu->isHealthy()) {
+        enterFault();
+        return;
+    }
     if (!std::isfinite(target_angle_deg))
         return;
 
@@ -164,6 +178,10 @@ void MotionEngine::update(uint32_t now_ms, bool input_connected) {
         return;
     if (!input_connected) {
         stop();
+        return;
+    }
+    if (!m_chassis->isHealthy() || !m_imu->isHealthy()) {
+        enterFault();
         return;
     }
 
@@ -292,7 +310,7 @@ int MotionEngine::compensate(int output) const {
     if (!m_battery)
         return output;
     const int voltage_mv = m_battery->getVoltageMv();
-    if (voltage_mv <= 0)
+    if (!validBatteryMv(voltage_mv))
         return output;
 
     double scale = static_cast<double>(cfg::kNominalBatteryMv) / voltage_mv;

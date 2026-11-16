@@ -1,0 +1,55 @@
+#pragma once
+
+#include <array>
+#include <cstdint>
+
+namespace robot {
+
+/**
+ * @file wheel_chassis.hpp
+ * @brief 四轮底盘的抽象接口（参考版本，不参与编译）。
+ *
+ * 该接口与现有 robot::Chassis 分开：现有 Chassis 只有左右差速，
+ * 四轮麦轮需要独立的轮序和四路反馈，不能用左右平均伪装。
+ *
+ * 轮序：FL / FR / BL / BR。
+ */
+enum class WheelIndex : std::uint8_t { FrontLeft = 0, FrontRight = 1, BackLeft = 2, BackRight = 3 };
+
+struct WheelState {
+    double current_ma = 0.0;
+    double velocity_rpm = 0.0; // 轮端 RPM
+    double position_deg = 0.0; // 轮端角度
+    double temperature_c = 0.0;
+    bool valid = false;
+};
+
+struct WheelSnapshot {
+    std::array<WheelState, 4> wheel{};
+    std::uint32_t timestamp_ms = 0;
+    bool valid = false;
+};
+
+class WheelChassis {
+public:
+    virtual ~WheelChassis() = default;
+
+    // 轮端速度，RPM；顺序 FL/FR/BL/BR。
+    virtual bool set_wheel_velocity(const std::array<double, 4> &rpm) = 0;
+
+    // 四轮功率，-127..127；顺序 FL/FR/BL/BR。
+    virtual bool set_wheel_power(const std::array<int, 4> &power) = 0;
+
+    virtual bool read_wheel_state(WheelSnapshot &out) = 0;
+
+    // 物理清零四个轮端编码器；运动中应拒绝。
+    virtual bool tare_position() = 0;
+
+    // 周期服务：命令超时、过流/过温检查；建议 20ms 一次。
+    virtual void poll(std::uint32_t now_ms) = 0;
+
+    virtual void stop(bool brake = true) = 0;
+    virtual bool is_healthy() const = 0;
+};
+
+} // namespace robot

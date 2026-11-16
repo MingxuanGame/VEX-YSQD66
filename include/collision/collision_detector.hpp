@@ -94,6 +94,10 @@ private:
 
     double readAvgCurrent() const;
     double readAvgVelocity() const;
+    double readLeftCurrent() const;
+    double readRightCurrent() const;
+    double readLeftVelocity() const;
+    double readRightVelocity() const;
     double readGyro() const;
 };
 

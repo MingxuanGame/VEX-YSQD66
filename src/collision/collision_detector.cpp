@@ -2,6 +2,7 @@
 #include "robot/chassis.hpp"
 #include "robot/imu.hpp"
 #include "robot/clock.hpp"
+#include <algorithm>
 #include <cmath>
 
 namespace collision {
@@ -25,12 +26,48 @@ void CollisionDetector::setConfig(const CollisionConfig &config) {
     m_config = config;
 }
 
+double CollisionDetector::readLeftCurrent() const {
+    if (m_is_injecting)
+        return m_fake_current;
+    if (!m_chassis)
+        return 0.0;
+    const double value = m_chassis->getLeftCurrent();
+    return std::isfinite(value) ? value : 0.0;
+}
+
+double CollisionDetector::readRightCurrent() const {
+    if (m_is_injecting)
+        return m_fake_current;
+    if (!m_chassis)
+        return 0.0;
+    const double value = m_chassis->getRightCurrent();
+    return std::isfinite(value) ? value : 0.0;
+}
+
+double CollisionDetector::readLeftVelocity() const {
+    if (m_is_injecting)
+        return m_fake_velocity;
+    if (!m_chassis)
+        return 0.0;
+    const double value = m_chassis->getLeftVelocity();
+    return std::isfinite(value) ? value : 0.0;
+}
+
+double CollisionDetector::readRightVelocity() const {
+    if (m_is_injecting)
+        return m_fake_velocity;
+    if (!m_chassis)
+        return 0.0;
+    const double value = m_chassis->getRightVelocity();
+    return std::isfinite(value) ? value : 0.0;
+}
+
 double CollisionDetector::readAvgCurrent() const {
     if (m_is_injecting)
         return m_fake_current;
     if (!m_chassis)
         return 0.0;
-    return (m_chassis->getLeftCurrent() + m_chassis->getRightCurrent()) / 2.0;
+    return (readLeftCurrent() + readRightCurrent()) / 2.0;
 }
 
 double CollisionDetector::readAvgVelocity() const {
@@ -38,7 +75,7 @@ double CollisionDetector::readAvgVelocity() const {
         return m_fake_velocity;
     if (!m_chassis)
         return 0.0;
-    return (std::abs(m_chassis->getLeftVelocity()) + std::abs(m_chassis->getRightVelocity())) / 2.0;
+    return (std::abs(readLeftVelocity()) + std::abs(readRightVelocity())) / 2.0;
 }
 
 double CollisionDetector::readGyro() const {
@@ -46,15 +83,18 @@ double CollisionDetector::readGyro() const {
         return m_fake_gyro;
     if (!m_imu)
         return 0.0;
-    return std::abs(m_imu->getGyroRateZ());
+    const double value = std::abs(m_imu->getGyroRateZ());
+    return std::isfinite(value) ? value : 0.0;
 }
 
 bool CollisionDetector::isTriggered() {
     if (!m_is_injecting && !m_chassis)
         return false;
+    if (!m_is_injecting && !m_chassis->isHealthy())
+        return false;
 
-    double current = readAvgCurrent();
-    double velocity = readAvgVelocity();
+    const double current = std::max(readLeftCurrent(), readRightCurrent());
+    const double velocity = readAvgVelocity();
 
     return (current > m_config.current_threshold_ma && velocity < m_config.velocity_threshold_rpm);
 }
@@ -71,6 +111,13 @@ bool CollisionDetector::startObservation(uint32_t now_ms) {
     m_observe_result = CollisionType::None;
 
     m_observe_features.velocity_at_trigger = readAvgVelocity();
+    m_observe_features.left_current = readLeftCurrent();
+    m_observe_features.right_current = readRightCurrent();
+    m_observe_features.left_velocity = readLeftVelocity();
+    m_observe_features.right_velocity = readRightVelocity();
+    m_observe_features.max_current =
+        std::max(m_observe_features.left_current, m_observe_features.right_current);
+    m_observe_features.feedback_valid = m_is_injecting || (m_chassis && m_chassis->isHealthy());
     sampleObservation(now_ms);
     return true;
 }
@@ -116,7 +163,15 @@ const CollisionFeatures &CollisionDetector::getObservationFeatures() const {
 
 void CollisionDetector::sampleObservation(uint32_t now_ms) {
     const double gyro = readGyro();
-    const double current = readAvgCurrent();
+    const double left_current = readLeftCurrent();
+    const double right_current = readRightCurrent();
+    const double current = (left_current + right_current) / 2.0;
+
+    m_observe_features.left_current = left_current;
+    m_observe_features.right_current = right_current;
+    m_observe_features.left_velocity = readLeftVelocity();
+    m_observe_features.right_velocity = readRightVelocity();
+    m_observe_features.max_current = std::max(left_current, right_current);
 
     if (gyro > m_observe_features.max_gyro)
         m_observe_features.max_gyro = gyro;
@@ -147,6 +202,8 @@ CollisionType CollisionDetector::finishObservation(uint32_t now_ms) {
     m_observe_features.velocity_at_end = readAvgVelocity();
     m_observe_features.velocity_recovered =
         (m_observe_features.velocity_at_end > m_config.cone_velocity_recovered);
+    m_observe_features.left_velocity = readLeftVelocity();
+    m_observe_features.right_velocity = readRightVelocity();
 
     m_observe_result = CollisionType::Unknown;
     if (m_observe_features.gyro_above_count >= m_config.gyro_above_count &&

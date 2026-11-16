@@ -37,6 +37,26 @@ int clampOutput(int value) {
     return value;
 }
 
+double averageCurrent(robot::Chassis *chassis) {
+    if (!chassis || !chassis->isHealthy())
+        return 0.0;
+    const double left = chassis->getLeftCurrent();
+    const double right = chassis->getRightCurrent();
+    if (!std::isfinite(left) || !std::isfinite(right))
+        return 0.0;
+    return (left + right) / 2.0;
+}
+
+double averageVelocity(robot::Chassis *chassis) {
+    if (!chassis || !chassis->isHealthy())
+        return 0.0;
+    const double left = chassis->getLeftVelocity();
+    const double right = chassis->getRightVelocity();
+    if (!std::isfinite(left) || !std::isfinite(right))
+        return 0.0;
+    return (left + right) / 2.0;
+}
+
 } // namespace
 
 CollisionRecovery::CollisionRecovery(const CollisionConfig &config) : m_config(config) {}
@@ -115,7 +135,7 @@ bool CollisionRecovery::recover(CollisionType type, RetryFunc retry, FallbackFun
 }
 
 bool CollisionRecovery::driveFor(uint32_t duration_ms, int left, int right, uint32_t deadline_ms) {
-    if (!m_chassis)
+    if (!m_chassis || !m_chassis->isHealthy())
         return false;
     if (expired(deadline_ms))
         return false;
@@ -142,7 +162,7 @@ bool CollisionRecovery::escapeCollision(uint32_t deadline_ms) {
 }
 
 bool CollisionRecovery::startEscapeAsync(uint32_t now_ms, uint32_t deadline_ms) {
-    if (!m_chassis)
+    if (!m_chassis || !m_chassis->isHealthy())
         return false;
 
     m_escape_phase = EscapePhase::Back;
@@ -159,8 +179,10 @@ bool CollisionRecovery::updateEscapeAsync(uint32_t now_ms) {
     if (m_escape_phase == EscapePhase::Idle || m_escape_phase == EscapePhase::Done) {
         return m_escape_phase == EscapePhase::Done;
     }
-    if (!m_chassis)
-        return false;
+    if (!m_chassis || !m_chassis->isHealthy()) {
+        finishEscape(false);
+        return true;
+    }
 
     if (expired(m_escape_deadline_ms)) {
         finishEscape(false);
@@ -177,7 +199,7 @@ bool CollisionRecovery::updateEscapeAsync(uint32_t now_ms) {
             return false;
         }
 
-        const double current = (m_chassis->getLeftCurrent() + m_chassis->getRightCurrent()) / 2.0;
+        const double current = averageCurrent(m_chassis);
         m_chassis->stop(true);
         if (current < m_config.escape_clear_current) {
             finishEscape(true);
@@ -249,7 +271,7 @@ void CollisionRecovery::finishEscape(bool success) {
 }
 
 bool CollisionRecovery::isPathClear() {
-    if (!m_chassis)
+    if (!m_chassis || !m_chassis->isHealthy())
         return false;
 
     // 给一点极小的动力向前试探：后退脱困后，要确认原方向是否已经通畅。
@@ -262,7 +284,7 @@ bool CollisionRecovery::isPathClear() {
 
     m_chassis->setDrive(probe_speed, probe_speed);
     robot::delayMs(static_cast<uint32_t>(probe_ms));
-    double current = (m_chassis->getLeftCurrent() + m_chassis->getRightCurrent()) / 2.0;
+    const double current = averageCurrent(m_chassis);
     m_chassis->stop(true);
 
     // 如果电流很低，说明没顶着东西，路通了。
@@ -270,14 +292,14 @@ bool CollisionRecovery::isPathClear() {
 }
 
 bool CollisionRecovery::updateAntiPush(uint32_t now) {
-    if (!m_chassis) {
+    if (!m_chassis || !m_chassis->isHealthy()) {
         m_push_start_time = 0;
         m_is_being_pushed = false;
         return false;
     }
 
-    double current = (m_chassis->getLeftCurrent() + m_chassis->getRightCurrent()) / 2.0;
-    double velocity = (m_chassis->getLeftVelocity() + m_chassis->getRightVelocity()) / 2.0;
+    const double current = averageCurrent(m_chassis);
+    const double velocity = averageVelocity(m_chassis);
 
     int push_time = m_config.ant_push_time_ms;
     if (push_time < 0)

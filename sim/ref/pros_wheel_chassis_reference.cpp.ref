@@ -1,0 +1,51 @@
+#include "robot/pros_wheel_chassis.hpp"
+#include "chassis.h"
+#include "pros/misc.hpp"
+#include "pros/rtos.hpp"
+
+namespace robot {
+
+bool ProsWheelChassis::set_wheel_velocity(const std::array<double, 4> &rpm) {
+    return chassis::set_wheel_velocity(rpm[0], rpm[1], rpm[2], rpm[3]);
+}
+
+bool ProsWheelChassis::set_wheel_power(const std::array<int, 4> &power) {
+    return chassis::set_wheel_power(power[0], power[1], power[2], power[3]);
+}
+
+bool ProsWheelChassis::read_wheel_state(WheelSnapshot &out) {
+    out = WheelSnapshot{};
+    chassis::State state{};
+    if (!chassis::read_state(state))
+        return false;
+
+    out.timestamp_ms = state.timestamp_ms;
+    for (int i = 0; i < 4; ++i) {
+        out.wheel[i].current_ma = state.wheel[i].current_ma;
+        out.wheel[i].velocity_rpm = state.wheel[i].velocity_rpm;
+        out.wheel[i].position_deg = state.wheel[i].position_deg;
+        out.wheel[i].temperature_c = state.wheel[i].temperature_c;
+        out.wheel[i].valid = state.wheel[i].valid;
+    }
+    out.valid = state.valid;
+    return out.valid;
+}
+
+bool ProsWheelChassis::tare_position() {
+    return chassis::tare_position(pros::millis());
+}
+
+void ProsWheelChassis::poll(std::uint32_t now_ms) {
+    chassis::poll(now_ms);
+}
+
+void ProsWheelChassis::stop(bool brake) {
+    (void)brake;
+    chassis::stop();
+}
+
+bool ProsWheelChassis::is_healthy() const {
+    return chassis::isHealthy();
+}
+
+} // namespace robot

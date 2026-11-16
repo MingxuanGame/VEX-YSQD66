@@ -1,5 +1,26 @@
 # 协作边界：底盘与宏模块
 
+## 代码规范优先级
+
+已确定采用方案 A：
+
+```text
+AGENTS.md / .clang-format / .clang-tidy 优先
+培训 PPT 作为背景材料，不作为逐条验收标准
+```
+
+因此：
+
+- 新模块继续使用 `snake_case` 函数和普通变量
+- 已有 `camelCase` 模块保留原风格，不做全仓重命名
+- 全局可变对象使用 `_g_` 前缀
+- 私有/保护成员使用 `m_`
+- 常量使用 `kPascalCase`
+- 列宽使用项目 `.clang-format` 的 100 列
+- 4 空格缩进、K&R 大括号、函数间空行
+
+不为了和 PPT 的字面示例一致而制造大面积无关 diff。
+
 ## 结论
 
 其他组员可以继续修改底盘和宏录制逻辑，本边不把这些文件视为“只能由我们修改”。
@@ -35,6 +56,35 @@ tests/*
 chassis::set_power(int left_power, int right_power);
 chassis::stop();
 ```
+
+新的机械方案是 4 个独立麦轮，`set_power()` 的左右分组已经不够。建议底盘模块增加四轮接口，同时保留旧入口作兼容包装：
+
+```cpp
+enum class Wheel { FrontLeft, FrontRight, BackLeft, BackRight };
+
+bool set_wheel_power(int fl, int fr, int bl, int br);
+bool set_wheel_velocity(int fl_rpm, int fr_rpm, int bl_rpm, int br_rpm);
+
+struct WheelState {
+    double current_ma;
+    double velocity_rpm;
+    double position_deg;
+    bool valid;
+};
+
+struct State {
+    WheelState wheel[4];
+    bool valid;
+};
+
+bool read_state(State &out);
+bool tare_position();
+```
+
+驱动、反馈和 tare 的实际实现由底盘维护者决定；本边按新接口更新 `ProsChassis`、麦轮运动学和测试。
+
+四轮接口的完整参考样板在 [`sim/ref/`](sim/ref/README.md)：
+`chassis_reference.hpp.ref` / `chassis_reference.cpp.ref`。它们不参与编译，不能直接覆盖生产文件。
 
 后续如果需要：
 

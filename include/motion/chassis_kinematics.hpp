@@ -36,9 +36,11 @@ private:
     double m_last_left_position;
     double m_last_right_position;
     double m_imu_rotation_offset_deg;
+    double m_last_imu_rotation_deg;
     double m_last_distance;
     double m_last_delta_heading;
     bool m_initialized;
+    bool m_last_imu_valid;
 };
 
 } // namespace motion

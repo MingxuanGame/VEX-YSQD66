@@ -23,10 +23,16 @@ enum class CollisionType {
 // ==================== 碰撞特征数据 ====================
 // 这些特征用于在无额外传感器的情况下，通过多维度数据区分撞车、撞墙和撞锥。
 struct CollisionFeatures {
-    double max_gyro = 0.0;         // 峰值：撞车有剧烈晃动，撞墙则是瞬间冲击后快速稳定
-    double avg_gyro = 0.0;         // 均值：判断晃动是否持续
-    int gyro_above_count = 0;      // 超阈值次数：过滤单次尖峰造成的误判
-    double avg_current = 0.0;      // 均值：判断是否持续堵转
+    double max_gyro = 0.0;    // 峰值：撞车有剧烈晃动，撞墙则是瞬间冲击后快速稳定
+    double avg_gyro = 0.0;    // 均值：判断晃动是否持续
+    int gyro_above_count = 0; // 超阈值次数：过滤单次尖峰造成的误判
+    double avg_current = 0.0; // 均值：判断是否持续堵转
+    double max_current = 0.0; // 单侧峰值：四轮独立时避免平均值掩盖单轮堵转
+    double left_current = 0.0;
+    double right_current = 0.0;
+    double left_velocity = 0.0;
+    double right_velocity = 0.0;
+    bool feedback_valid = false;
     double current_variance = 0.0; // 方差：对方移动会导致电流波动，撞墙则波动小
     uint32_t duration_ms = 0;      // 耗时：确保观察窗口在复杂环境下没有失真
 

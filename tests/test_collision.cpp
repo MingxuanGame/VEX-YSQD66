@@ -5,11 +5,15 @@
 #include "robot/imu.hpp"
 #include "sim/core/sim_clock.hpp"
 
+#include <cmath>
+
 namespace {
 
 struct FakeChassis : robot::Chassis {
     double current = 0.0;
     double velocity = 0.0;
+    double left_current = -1.0;
+    double right_current = -1.0;
     int last_left = 0;
     int last_right = 0;
     bool stopped = false;
@@ -26,11 +30,11 @@ struct FakeChassis : robot::Chassis {
     }
 
     double getLeftCurrent() const override {
-        return current;
+        return left_current >= 0.0 ? left_current : current;
     }
 
     double getRightCurrent() const override {
-        return current;
+        return right_current >= 0.0 ? right_current : current;
     }
 
     double getLeftVelocity() const override {
@@ -194,6 +198,20 @@ void test_collision() {
     CollisionFeatures features;
     CHECK(detector.detect(&features) == CollisionType::Deadzone);
     CHECK(features.avg_current > 2500.0);
+    CHECK(features.max_current > 2500.0);
+
+    // 单侧高电流 + 另一侧低电流：不能被平均值掩盖。
+    chassis.current = 0.0;
+    chassis.left_current = 3000.0;
+    chassis.right_current = 0.0;
+    CHECK(detector.isTriggered());
+    chassis.left_current = -1.0;
+    chassis.right_current = -1.0;
+
+    // 非有限反馈不能参与碰撞判定。
+    chassis.current = std::nan("");
+    CHECK(!detector.isTriggered());
+    chassis.current = 3000.0;
 
     // 非阻塞观察：start/update 不应该阻塞主循环。
     CollisionDetector async_detector(chassis, imu);

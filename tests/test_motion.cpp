@@ -10,6 +10,8 @@
 #include "tuning/tuning.hpp"
 #include "vxmath/units.hpp"
 
+#include <cmath>
+
 namespace {
 
 struct MotionFakeChassis : robot::Chassis {
@@ -74,6 +76,11 @@ struct MotionFakeChassis : robot::Chassis {
 
 struct MotionFakeImu : robot::Imu {
     double heading = 0.0;
+    bool healthy = true;
+
+    bool isHealthy() const override {
+        return healthy;
+    }
 
     double getHeading() const override {
         return heading;
@@ -128,6 +135,41 @@ void test_motion() {
     CHECK(pid.update(-1000.0, 0.0) >= -127.0);
     CHECK(pid.getIntegral() <= 100.0);
     CHECK(pid.getIntegral() >= -100.0);
+
+    // 饱和抗积分：长时间大误差后反向，输出必须能较快退饱和。
+    motion::Pid windup_pid;
+    windup_pid.setGains(1.0, 1.0, 0.0);
+    windup_pid.setIntegralLimits(-100.0, 100.0);
+    windup_pid.setOutputLimits(-10.0, 10.0);
+    for (int i = 0; i < 100; ++i)
+        windup_pid.update(100.0, 0.01);
+    CHECK(windup_pid.getOutput() <= 10.0);
+    CHECK(windup_pid.getIntegral() <= 10.0);
+    windup_pid.update(-100.0, 0.01);
+    CHECK(windup_pid.getOutput() <= 0.0);
+
+    // IMU 掉线时必须回退到编码器航向，不能把 0° 或跳变当成真实航向。
+    kinematics.reset();
+    chassis.left_position = 0.0;
+    chassis.right_position = 0.0;
+    imu.heading = 0.0;
+    imu.healthy = false;
+    kinematics.update(&chassis, &imu, 0.01);
+    chassis.right_position = 360.0;
+    kinematics.update(&chassis, &imu, 0.01);
+    CHECK(std::isnan(kinematics.getPose().heading) == false);
+    CHECK(kinematics.getPose().heading > 0.0);
+    CHECK(kinematics.getPose().heading < 1.5);
+    imu.healthy = true;
+
+    // IMU 不健康时 MotionEngine 必须进入 Fault，而不是继续闭环。
+    MotionFakeChassis unhealthy_chassis;
+    MotionFakeImu unhealthy_imu;
+    unhealthy_imu.healthy = false;
+    MotionFakeBattery unhealthy_battery;
+    motion::MotionEngine unhealthy_engine(unhealthy_chassis, unhealthy_imu, &unhealthy_battery);
+    unhealthy_engine.startDrive(10.0, 50);
+    CHECK(unhealthy_engine.getState() == motion::State::Fault);
 
     // State machine: busy after start; disconnect must stop.
     MotionFakeBattery battery;

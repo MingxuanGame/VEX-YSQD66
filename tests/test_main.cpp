@@ -3,6 +3,7 @@
 void test_tuning();
 void test_collision();
 void test_motion();
+void test_mecanum();
 void test_control();
 void test_library();
 void test_sim();
@@ -15,6 +16,7 @@ int main() {
     test_tuning();
     test_collision();
     test_motion();
+    test_mecanum();
     test_control();
     test_library();
     test_sim();
