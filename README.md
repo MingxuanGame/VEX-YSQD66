@@ -1,6 +1,6 @@
 # VEX-yuanshen
 
-基于 PROS V5（kernel 4.2.3）的 VEX V5 机器人 C/C++ 工程。当前实车实现四电机 Arcade 底盘驾驶与 Brain 触屏宏录制/回放；`autonomous()` 留空，未接入机构部分保留扩展接口。
+基于 PROS V5（kernel 4.2.3）的 VEX V5 机器人 C/C++ 工程。当前实车实现四电机 Arcade 底盘驾驶与 Brain 触屏宏录制/回放；`autonomous()` 留空。抬升和夹爪提供独立的开环控制模块，尚未接入主循环。
 
 ## 功能概览
 
@@ -9,13 +9,15 @@
 - **检查点续录**：录制中按 L1 添加检查点；加载已有宏后可从任意检查点回放前缀、停车 3 秒再续录剩余帧并另存新编号。
 - **显示独占**：`Makefile` 将 `liblvgl.a` 排除出冷包，由 `pros::screen` 独占绘制按钮与计时页面，防止 LVGL 后台任务覆盖界面。
 
-> 详细协议、CSV 格式与实机待验证清单见 [宏录制协议](docs/macro-protocol.md)；赛制与编程规范见 [AGENTS.md](AGENTS.md) 与 [规则索引](docs/rules/README.md)。
+> 详细协议、CSV 格式与实机待验证清单见 [宏录制协议](docs/macro-protocol.md)；抬升与夹爪的精简开环标准见 [机构模块](docs/mechanisms.md)；赛制与编程规范见 [AGENTS.md](AGENTS.md) 与 [规则索引](docs/rules/README.md)。
 
 ## 代码结构
 
 ```text
 include/
   chassis.h              底盘控制接口
+  lift.hpp               抬升开环接口
+  claw.hpp               夹爪开环接口
   io/
     controller.hpp       手柄抽象基类 io::Controller
     pros_controller.hpp  PROS 手柄适配器工厂声明
@@ -27,6 +29,8 @@ include/
 src/
   main.cpp               PROS 五个竞赛回调与主循环调度
   chassis.cpp            四电机端口 (2,1 / -3,-4)、蓝齿轮与偏置补偿
+  lift.cpp               抬升开环电机
+  claw.cpp               夹爪开环电机
   io/pros_controller.cpp ProsController 继承实现
   macro/                 engine / screen / session / storage 及中文字形数据
 ```
