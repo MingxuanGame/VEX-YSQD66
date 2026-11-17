@@ -8,7 +8,7 @@ namespace chassis {
 namespace {
 
 // 功率偏移量：正值补偿右侧，负值补偿左侧。
-constexpr int kRightMotorOffsetToLeft = 10;
+constexpr int kRightMotorOffsetToLeft = 0;
 
 // 面向车头：左前 2、左后 1，右前 3、右后 4；蓝齿轮，编码器单位为电机轴角度。
 pros::MotorGroup _g_left({2, 1}, pros::MotorGears::blue, pros::MotorUnits::degrees);
