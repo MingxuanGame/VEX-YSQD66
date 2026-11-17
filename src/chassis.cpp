@@ -44,6 +44,15 @@ void stop() {
     _g_right.brake();
 }
 
+bool reset_state() {
+    stop();
+    const auto left_brake = _g_left.set_brake_mode_all(pros::MotorBrake::brake);
+    const auto right_brake = _g_right.set_brake_mode_all(pros::MotorBrake::brake);
+    const auto left_zero = _g_left.tare_position_all();
+    const auto right_zero = _g_right.tare_position_all();
+    return left_brake == 1 && right_brake == 1 && left_zero == 1 && right_zero == 1;
+}
+
 bool set_power(int left_power, int right_power) {
     if (pros::competition::is_disabled() || pros::competition::is_autonomous()) {
         stop();

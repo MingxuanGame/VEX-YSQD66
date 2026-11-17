@@ -11,15 +11,19 @@
 #include <limits>
 #include <sstream>
 #include <string>
+#include <vector>
 
 namespace {
 class MacroHardware final : public macrorec::Hardware {
 public:
     bool apply(const macrorec::Command &command) override;
     void stop() override;
+    bool reset() override;
     macrorec::Command output{};
     int writes = 0;
     bool healthy = true;
+    bool reset_healthy = true;
+    int resets = 0;
 };
 
 bool MacroHardware::apply(const macrorec::Command &command) {
@@ -30,6 +34,12 @@ bool MacroHardware::apply(const macrorec::Command &command) {
 
 void MacroHardware::stop() {
     output = {};
+}
+
+bool MacroHardware::reset() {
+    stop();
+    ++resets;
+    return reset_healthy;
 }
 
 macrorec::Input input_for(std::size_t index) {
@@ -174,27 +184,166 @@ void test_cancellation_and_faults() {
     CHECK(engine.state() == macrorec::State::Recording && engine.frame_count() == 1);
 }
 
-void test_scheduler_jitter() {
+void test_reset_and_exact_replay() {
     MacroHardware hardware;
     macrorec::Engine engine(hardware);
+    hardware.output = {100, -100};
+    engine.cancel(); // 对应启动/加载时的统一重置入口。
+    CHECK(hardware.resets == 1 && hardware.output.chassis_left_power == 0);
     CHECK(engine.start_recording(0));
+    CHECK(hardware.resets == 2);
     for (std::uint32_t t = 0; t < 3000; t += 20) {
         engine.update(t, true);
     }
-    // 点击发生在周期中间：第一帧晚 13ms，然后唤醒时间交替提前/滞后 1ms。
     for (std::size_t i = 0; i < macrorec::kFrameCount; ++i) {
-        const auto jitter_ms = i == 0 ? 0 : (i % 2 == 0 ? 1 : -1);
-        const auto t = static_cast<std::uint32_t>(3013 + i * 20 + jitter_ms);
-        engine.update(t, true, input_for(i));
-        CHECK(engine.state() == macrorec::State::Recording);
-        CHECK(engine.frame_count() == i + 1);
+        engine.update(3000 + i * 20, true, input_for(i));
+        CHECK(hardware.resets == 3); // 首帧前重置，其后不打断采样。
     }
-    for (std::uint32_t t = 17513; t <= 18013; t += 20) {
+    const auto clip = engine.clip();
+    for (std::uint32_t t = 17500; t <= 18000; t += 20) {
         engine.update(t, true);
-        CHECK(hardware.output.chassis_left_power == 0);
+        CHECK(hardware.resets == 4); // 末尾 500ms 只停止，不反复清零。
     }
-    CHECK(engine.state() == macrorec::State::Complete);
-    CHECK(hardware.writes == 725);
+    CHECK(engine.start_replay(clip, 20000));
+    for (std::uint32_t t = 20000; t < 23000; t += 20) {
+        engine.update(t, true, input_for(99));
+    }
+    for (std::size_t i = 0; i < macrorec::kFrameCount; ++i) {
+        engine.update(23000 + i * 20, true, input_for(99));
+        CHECK(hardware.output.chassis_left_power == clip[i].command.chassis_left_power);
+        CHECK(hardware.output.chassis_right_power == clip[i].command.chassis_right_power);
+    }
+    engine.cancel();
+    hardware.reset_healthy = false;
+    const int writes = hardware.writes;
+    CHECK(!engine.start_recording(40000));
+    CHECK(engine.state() == macrorec::State::Fault && hardware.writes == writes);
+    CHECK(std::string(engine.status()) == "COMPONENT RESET FAILED");
+    hardware.reset_healthy = true;
+    CHECK(engine.start_recording(40000));
+    for (std::uint32_t t = 40000; t < 43000; t += 20) {
+        engine.update(t, true);
+    }
+    hardware.reset_healthy = false;
+    engine.update(43000, true, input_for(0));
+    CHECK(engine.state() == macrorec::State::Fault && hardware.writes == writes);
+}
+
+void test_scheduler_jitter() {
+    class TimedHardware final : public macrorec::Hardware {
+    public:
+        std::uint32_t now = 0;
+        std::uint32_t reset_cost_ms = 0;
+        std::uint32_t write_cost_ms = 0;
+        std::uint32_t stop_cost_ms = 0;
+        bool holding = false;
+        std::vector<std::uint32_t> writes;
+        std::vector<std::uint32_t> stops;
+
+        bool apply(const macrorec::Command &) override {
+            now += write_cost_ms;
+            writes.push_back(now);
+            holding = true;
+            return true;
+        }
+
+        void stop() override {
+            if (holding) {
+                now += stop_cost_ms;
+                stops.push_back(now);
+            }
+            holding = false;
+        }
+
+        bool reset() override {
+            stop();
+            now += reset_cost_ms;
+            return true;
+        }
+
+        std::uint32_t time_ms(std::uint32_t) const override {
+            return now;
+        }
+    };
+
+    // 1ms 服务，包含首帧重置耗时和倒计时相位偏差；每个成功输出必须保持整整 20ms。
+    for (const bool recording : {true, false}) {
+        TimedHardware hardware;
+        hardware.reset_cost_ms = 7;
+        macrorec::Engine engine(hardware);
+        macrorec::Clip clip{};
+        CHECK(recording ? engine.start_recording(0) : engine.start_replay(clip, 0));
+        while (engine.busy() && hardware.now < 19000) {
+            engine.update(hardware.now, true, input_for(7));
+            ++hardware.now;
+        }
+        CHECK(engine.state() == macrorec::State::Complete);
+        CHECK(hardware.writes.size() == macrorec::kFrameCount);
+        CHECK(hardware.writes.front() == 3014); // 两次重置各耗时 7ms，实际写入后才建立时基。
+        for (std::size_t i = 1; i < hardware.writes.size(); ++i) {
+            CHECK(hardware.writes[i] - hardware.writes[i - 1] == 20);
+        }
+        CHECK(hardware.stops.size() == 1);
+        CHECK(hardware.stops.back() - hardware.writes.back() == 20);
+    }
+    const auto prepare = [](TimedHardware &hardware, macrorec::Engine &engine) {
+        CHECK(engine.start_recording(0));
+        for (hardware.now = 0; hardware.now <= 3000; hardware.now += 20) {
+            engine.update(hardware.now, true, input_for(7));
+        }
+        CHECK(hardware.writes.size() == 1);
+    };
+    // 原来会成功执行 39ms/1ms 的序列，现在延迟帧直接故障，不得继续追赶。
+    TimedHardware delayed;
+    macrorec::Engine delayed_engine(delayed);
+    prepare(delayed, delayed_engine);
+    delayed.now = 3039;
+    delayed_engine.update(3039, true, input_for(7));
+    delayed.now = 3040;
+    delayed_engine.update(3040, true, input_for(7));
+    CHECK(delayed_engine.state() == macrorec::State::Fault);
+    CHECK(std::string(delayed_engine.status()) == "FRAME DEADLINE MISSED");
+    CHECK(delayed.writes.size() == 1 && !delayed.holding);
+
+    TimedHardware early;
+    macrorec::Engine early_engine(early);
+    prepare(early, early_engine);
+    early.now = 3019;
+    early_engine.update(3019, true, input_for(7));
+    CHECK(early.writes.size() == 1);
+    early.now = 3020;
+    early_engine.update(3020, true, input_for(7));
+    CHECK(early.writes.size() == 2 && early.writes[1] - early.writes[0] == 20);
+    // SDK 写入延迟也纳入检查，不能只看调用前的时间戳。
+    early.now = 3040;
+    early.write_cost_ms = 1;
+    early_engine.update(3040, true, input_for(7));
+    CHECK(early_engine.state() == macrorec::State::Fault && !early.holding);
+
+    TimedHardware tail;
+    macrorec::Engine tail_engine(tail);
+    prepare(tail, tail_engine);
+    for (tail.now = 3020; tail.now < 17500; tail.now += 20) {
+        tail_engine.update(tail.now, true, input_for(7));
+    }
+    CHECK(tail.writes.size() == 725);
+    tail.now = 17501;
+    tail_engine.update(17500, true); // 旧的调用参数不能掩盖真实时钟已经迟到。
+    CHECK(tail_engine.state() == macrorec::State::Fault && !tail.holding);
+
+    TimedHardware checkpoint;
+    macrorec::Engine checkpoint_engine(checkpoint);
+    macrorec::Clip prefix{};
+    prefix[0].checkpoint = true;
+    CHECK(checkpoint_engine.start_from_checkpoint(prefix, 1, 0));
+    for (checkpoint.now = 0; checkpoint.now <= 3000; checkpoint.now += 20) {
+        checkpoint_engine.update(checkpoint.now, true);
+    }
+    checkpoint.stop_cost_ms = 1;
+    checkpoint.now = 3020;
+    checkpoint_engine.update(3020, true);
+    CHECK(checkpoint_engine.state() == macrorec::State::Fault && !checkpoint.holding);
+    CHECK(checkpoint.stops.back() - checkpoint.writes.back() == 21);
 }
 
 void test_checkpoints() {
@@ -375,7 +524,7 @@ void test_storage() {
     modified.replace(modified.find("period_ms,20"), 12, "period_ms,10");
     CHECK(!load_text(modified));
     modified = text;
-    modified.replace(modified.find("VEX_MACRO,2"), 11, "VEX_MACRO,3");
+    modified.replace(modified.find("VEX_MACRO,3"), 11, "VEX_MACRO,4");
     CHECK(!load_text(modified));
     modified = text;
     modified.replace(modified.find("chassis_arcade_v1"), 17, "chassis_arcade_v2");
@@ -400,25 +549,11 @@ void test_storage() {
     CHECK(with_first_row("0,0,0,0,0,0,-42,73,1"));
     CHECK(loaded[0].command.chassis_left_power == -42);
     CHECK(loaded[0].checkpoint);
-    // v1 的 L1 电平不能被追认为检查点；旧文件仍可从结尾完整回放。
-    std::istringstream lines(text);
-    std::string legacy;
-    std::string line;
-    std::size_t line_index = 0;
-    while (std::getline(lines, line)) {
-        if (line_index == 0) {
-            line = "VEX_MACRO,1";
-        } else if (line_index >= 5 && line_index < 6 + macrorec::kFrameCount) {
-            line.erase(line.rfind(','));
-        }
-        legacy += line + '\n';
-        ++line_index;
-    }
-    CHECK(load_text(legacy));
-    for (const auto &frame : loaded) {
-        CHECK(!frame.checkpoint);
-    }
-    CHECK(!load_text("VEX_MACRO,1" + text.substr(text.find('\n')))); // 不混用 v1/v2 列。
+    CHECK(macrorec::compatible_clip(source.string().c_str()));
+    CHECK(!load_text("VEX_MACRO,1" + text.substr(text.find('\n'))));
+    CHECK(!macrorec::compatible_clip(corrupt.string().c_str()));
+    CHECK(!load_text("VEX_MACRO,2" + text.substr(text.find('\n'))));
+    CHECK(!macrorec::compatible_clip(corrupt.string().c_str()));
     std::string crlf;
     for (char ch : text) {
         if (ch == '\n') {
@@ -437,6 +572,7 @@ void test_storage() {
 void test_macro() {
     test_mapping();
     test_record_replay();
+    test_reset_and_exact_replay();
     test_cancellation_and_faults();
     test_scheduler_jitter();
     test_checkpoints();

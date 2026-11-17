@@ -20,11 +20,13 @@ struct SaveError {
 std::vector<int> catalog(const char *listing);
 // 路径 directory/macro_NNNNNN.csv；非法编号/超长路径返回 false，不修改文件。
 bool macro_path(const char *directory, int id, char *path, std::size_t capacity);
-// 同步阻塞 IO，只能停车后调用。严格验证 v1/v2 协议、725 帧、尾标记和 EOF。
-// v1 没有检查点，加载时全部置 false；v2 检查点列仅允许 0/1。
+// 同步读取当前 v3 的六行头部，用于页面过滤；旧版本、头部不匹配或 IO 失败返回 false。
+// 只能停车后调用，不验证帧内容；选择时仍须使用 load_clip 完整校验。
+bool compatible_clip(const char *path);
+// 同步阻塞 IO，只能停车后调用。仅验证 v3 协议、725 帧、尾标记和 EOF。
 // 失败不返回可用宏，调用方不得使用部分载入的数据。
 bool load_clip(const char *path, Clip &clip);
-// 同步以 v2 写入不存在的新文件，flush/close 后逐帧（含检查点）回读校验，成功才返回 true。
+// 同步以 v3 写入不存在的新文件，flush/close 后逐帧（含检查点）回读校验，成功才返回 true。
 // 不覆盖任何既有文件；失败可能留下不完整文件并占用编号，下次应递增。
 // error 可为空；非空时成功清空诊断，失败保留首个错误，关闭文件不覆盖原始错误码。
 // directory_listing 非空时，使用同一目录的完整、新鲜枚举替代 fopen 存在性探测。

@@ -30,16 +30,49 @@ bool valid_frame(const Frame &frame) {
 
 Engine::Engine(Hardware &hardware) : m_hardware(hardware) {}
 
+std::uint32_t Hardware::time_ms(std::uint32_t fallback_ms) const {
+    return fallback_ms;
+}
+
+bool Engine::stop_frame(std::uint32_t now_ms) {
+    m_hardware.stop();
+    const auto stopped_ms = m_hardware.time_ms(now_ms);
+    if (m_frame_active && stopped_ms - m_last_frame_ms != kPeriodMs) {
+        fail("FRAME DEADLINE MISSED");
+        return false;
+    }
+    m_frame_active = false;
+    return true;
+}
+
+bool Engine::reset_hardware() {
+    m_hardware.stop();
+    if (!m_hardware.reset()) {
+        m_state = State::Fault;
+        m_status = "COMPONENT RESET FAILED";
+        return false;
+    }
+    return true;
+}
+
 bool Engine::start(std::uint32_t now_ms, bool recording) {
     if (busy()) {
         return false;
     }
-    m_hardware.stop();
+    if (!reset_hardware()) {
+        return false;
+    }
+    if (recording) {
+        m_clip.fill(Frame{});
+    }
     m_recording = recording;
     m_resuming = false;
     m_checkpoint_button_down = false;
-    m_started_ms = now_ms;
-    m_last_update_ms = now_ms;
+    m_resume_frame_count = 0;
+    m_pause_started_ms = 0;
+    m_started_ms = m_hardware.time_ms(now_ms);
+    m_last_update_ms = m_started_ms;
+    m_frame_active = false;
     m_frame_count = 0;
     m_state = State::Countdown;
     m_status = "INPUT LOCKED";
@@ -84,12 +117,15 @@ bool Engine::start_from_checkpoint(const Clip &clip, std::size_t frame_count,
 }
 
 void Engine::fail(const char *reason) {
-    m_hardware.stop();
+    if (!reset_hardware()) {
+        return;
+    }
     m_state = State::Fault;
     m_status = reason;
 }
 
 void Engine::update(std::uint32_t now_ms, bool allowed, const Input &input) {
+    now_ms = m_hardware.time_ms(now_ms);
     if (!busy()) {
         return;
     }
@@ -111,6 +147,7 @@ void Engine::update(std::uint32_t now_ms, bool allowed, const Input &input) {
         m_started_ms = now_ms - kCountdownMs - m_frame_count * kPeriodMs;
         m_checkpoint_button_down = (input.buttons & kCheckpointButton) != 0;
         m_state = State::Recording;
+        m_frame_active = false;
     }
     const auto elapsed = now_ms - m_started_ms;
     if (elapsed < kCountdownMs) {
@@ -123,10 +160,23 @@ void Engine::update(std::uint32_t now_ms, bool allowed, const Input &input) {
             fail("MISSED START FRAME");
             return;
         }
+        if (!reset_hardware()) {
+            return;
+        }
         // 倒计时跨过边界的首个 20ms 调度点作为帧零，避免点击发生于周期中间造成相位偏差。
         m_started_ms = now_ms - kCountdownMs;
         active_ms = 0;
         m_state = m_recording && !m_resuming ? State::Recording : State::Replaying;
+    }
+    if (m_frame_active) {
+        const auto held_ms = now_ms - m_last_frame_ms;
+        if (held_ms < kPeriodMs) {
+            return;
+        }
+        if (held_ms > kPeriodMs) {
+            fail("FRAME DEADLINE MISSED");
+            return;
+        }
     }
     if (m_resuming && m_state == State::Replaying &&
         (m_frame_count >= m_resume_frame_count || active_ms >= m_resume_frame_count * kPeriodMs)) {
@@ -137,16 +187,24 @@ void Engine::update(std::uint32_t now_ms, bool allowed, const Input &input) {
             fail("MISSED CHECKPOINT FRAME");
             return;
         }
-        m_hardware.stop();
+        if (!stop_frame(now_ms)) {
+            return;
+        }
         m_pause_started_ms = now_ms;
         m_state = State::CheckpointPause;
         m_status = "CHECKPOINT: WAIT 3s";
         return;
     }
     if (active_ms >= kRecordMs) {
-        m_hardware.stop();
+        if (!stop_frame(now_ms)) {
+            return;
+        }
         if (m_frame_count != kFrameCount) {
             fail("MISSED FRAME");
+            return;
+        }
+        // 只在动作区间结束的边界重置一次；500ms 停车期不反复清零编码器。
+        if (m_state != State::Resetting && !reset_hardware()) {
             return;
         }
         m_state = active_ms < kRecordMs + kResetMs ? State::Resetting : State::Complete;
@@ -154,18 +212,6 @@ void Engine::update(std::uint32_t now_ms, bool allowed, const Input &input) {
         return;
     }
     if (m_frame_count == kFrameCount) {
-        return;
-    }
-    const int phase_error_ms =
-        static_cast<int>(active_ms) - static_cast<int>(m_frame_count * kPeriodMs);
-    if (phase_error_ms >= static_cast<int>(kPeriodMs)) {
-        // 不能靠补写同一输入伪造丢失的帧，也不能快速追赶回放使动作时间失真。
-        fail("MISSED FRAME");
-        return;
-    }
-    // PROS 的周期唤醒及手柄读取可能有数 ms 抖动；容许最多 5ms 提前，仍然每帧只执行一次。
-    constexpr int kEarlyToleranceMs = 5;
-    if (phase_error_ms < -kEarlyToleranceMs) {
         return;
     }
     const auto index = m_frame_count;
@@ -187,13 +233,36 @@ void Engine::update(std::uint32_t now_ms, bool allowed, const Input &input) {
         fail("COMPONENT WRITE FAILED");
         return;
     }
+    const auto applied_ms = m_hardware.time_ms(now_ms);
+    if (m_frame_active && applied_ms - m_last_frame_ms != kPeriodMs) {
+        fail("FRAME DEADLINE MISSED");
+        return;
+    }
+    // 首帧和续录首帧在重置、采样、SDK 写入完成后建立时基。
+    if (!m_frame_active) {
+        m_started_ms = applied_ms - kCountdownMs - index * kPeriodMs;
+    }
+    m_last_frame_ms = applied_ms;
+    m_last_update_ms = applied_ms;
+    m_frame_active = true;
     ++m_frame_count;
 }
 
 void Engine::cancel() {
-    m_hardware.stop();
-    m_state = State::Cancelled;
     m_frame_count = 0;
+    m_recording = false;
+    m_resuming = false;
+    m_checkpoint_button_down = false;
+    m_resume_frame_count = 0;
+    m_pause_started_ms = 0;
+    m_started_ms = 0;
+    m_last_update_ms = 0;
+    m_frame_active = false;
+    m_last_frame_ms = 0;
+    if (!reset_hardware()) {
+        return;
+    }
+    m_state = State::Cancelled;
     m_status = "STOPPED";
 }
 
@@ -212,10 +281,16 @@ bool Engine::recording() const {
 }
 
 bool Engine::needs_input(std::uint32_t now_ms) const {
-    return (m_state == State::Recording && elapsed_ms(now_ms) < kRecordMs) ||
+    return (m_state == State::Recording && elapsed_ms(now_ms) < kRecordMs &&
+            frame_wait_ms(now_ms) <= 2) ||
            (m_state == State::Countdown && m_recording && !m_resuming &&
             elapsed_ms(now_ms) >= kCountdownMs) ||
            (m_state == State::CheckpointPause && now_ms - m_pause_started_ms >= kCountdownMs);
+}
+
+std::uint32_t Engine::frame_wait_ms(std::uint32_t now_ms) const {
+    const auto held_ms = now_ms - m_last_frame_ms;
+    return m_frame_active && held_ms < kPeriodMs ? kPeriodMs - held_ms : 0;
 }
 
 std::size_t Engine::frame_count() const {

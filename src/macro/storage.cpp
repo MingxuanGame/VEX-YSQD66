@@ -11,14 +11,12 @@
 namespace macrorec {
 namespace {
 constexpr std::array<const char *, 6> kHeader{
-    "VEX_MACRO,2",
+    "VEX_MACRO,3",
     "period_ms,20",
     "record_ms,14500",
     "reset_ms,500",
     "mapping,chassis_arcade_v1",
     "t_ms,left_x,left_y,right_x,right_y,buttons,chassis_left_power,chassis_right_power,checkpoint"};
-constexpr const char *kLegacyColumns =
-    "t_ms,left_x,left_y,right_x,right_y,buttons,chassis_left_power,chassis_right_power";
 
 bool save_failure(SaveError *error, const char *stage, int error_number) {
     if (error) {
@@ -72,9 +70,9 @@ bool read_line(std::FILE *file, char *line, std::size_t capacity) {
     return true;
 }
 
-bool parse_row(char *line, std::size_t index, Frame &frame, bool legacy) {
+bool parse_row(char *line, std::size_t index, Frame &frame) {
     std::array<int, 9> values{};
-    const std::size_t count = legacy ? 8 : 9;
+    constexpr std::size_t count = 9;
     char *cursor = line;
     for (std::size_t i = 0; i < count; ++i) {
         if (!((*cursor >= '0' && *cursor <= '9') || *cursor == '-')) {
@@ -101,26 +99,25 @@ bool parse_row(char *line, std::size_t index, Frame &frame, bool legacy) {
     return valid_frame(frame);
 }
 
-// expected 非空时只使用一帧栈空间回读验证，避免在 PROS 回调栈上构造整个 Clip。
-bool read_file(std::FILE *file, Clip *output, const Clip *expected) {
+bool read_header(std::FILE *file) {
     std::array<char, 192> line{};
-    if (!read_line(file, line.data(), line.size())) {
-        return false;
-    }
-    const bool legacy = std::strcmp(line.data(), "VEX_MACRO,1") == 0;
-    if (!legacy && std::strcmp(line.data(), kHeader[0]) != 0) {
-        return false;
-    }
-    for (std::size_t i = 1; i < kHeader.size(); ++i) {
-        const char *header = legacy && i == kHeader.size() - 1 ? kLegacyColumns : kHeader[i];
+    for (const char *header : kHeader) {
         if (!read_line(file, line.data(), line.size()) || std::strcmp(line.data(), header) != 0) {
             return false;
         }
     }
+    return true;
+}
+
+// expected 非空时只使用一帧栈空间回读验证，避免在 PROS 回调栈上构造整个 Clip。
+bool read_file(std::FILE *file, Clip *output, const Clip *expected) {
+    if (!read_header(file)) {
+        return false;
+    }
+    std::array<char, 192> line{};
     for (std::size_t i = 0; i < kFrameCount; ++i) {
         Frame frame{};
-        if (!read_line(file, line.data(), line.size()) ||
-            !parse_row(line.data(), i, frame, legacy)) {
+        if (!read_line(file, line.data(), line.size()) || !parse_row(line.data(), i, frame)) {
             return false;
         }
         if (output) {
@@ -185,6 +182,16 @@ bool macro_path(const char *directory, int id, char *path, std::size_t capacity)
     }
     const int length = std::snprintf(path, capacity, "%s/macro_%06d.csv", directory, id);
     return length > 0 && static_cast<std::size_t>(length) < capacity;
+}
+
+bool compatible_clip(const char *path) {
+    auto *file = std::fopen(path, "rb");
+    if (!file) {
+        return false;
+    }
+    const bool valid = read_header(file);
+    const bool closed = std::fclose(file) == 0;
+    return valid && closed;
 }
 
 bool load_clip(const char *path, Clip &clip) {
