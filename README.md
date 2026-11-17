@@ -19,6 +19,7 @@ include/
   io/
     controller.hpp       手柄抽象基类 io::Controller
     pros_controller.hpp  PROS 手柄适配器工厂声明
+  math/pid.hpp           带积分限幅与饱和抑制的离散 PID
   macro/
     engine.hpp           硬件抽象 macrorec::Hardware 与非阻塞状态机 Engine
     screen.hpp           Brain 触屏绘图与触摸轮询
@@ -28,6 +29,7 @@ src/
   main.cpp               PROS 五个竞赛回调与主循环调度
   chassis.cpp            四电机端口 (2,1 / -3,-4)、蓝齿轮与偏置补偿
   io/pros_controller.cpp ProsController 继承实现
+  math/pid.cpp           PID 计算与状态重置
   macro/                 engine / screen / session / storage 及中文字形数据
 ```
 
