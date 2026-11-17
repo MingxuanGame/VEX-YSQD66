@@ -11,6 +11,8 @@
 
 启动后 Brain 显示“新建宏录制”和“使用宏”。录制/回放限于脱离场控且启用的手动练习；宏文件格式、微调示例、停止行为和机构扩展点见 [宏录制协议](docs/macro-protocol.md)。Home 页面可正常驾驶，列表和结果页保持停车。
 
+宏界面使用 `pros::screen` 独占绘图。Makefile 将 `liblvgl.a` 排除出冷包，防止其自动启动的显示任务用空白页面覆盖按钮；不要同时初始化 LLEMU/LVGL 界面。修改此配置后需执行 `pros build all` 并重新上传，让冷包和热包一起更新。
+
 真机适配器 `ProsChassis` / `ProsImu` / `ProsMechanism` 目前只是**精简接线级**，未接入主循环，也不是比赛级安全实现，详见 [真机适配器状态](docs/hardware-adapters.md)。
 
 其他组员可以修改底盘和宏模块，本边会同步适配；接口边界见 [协作边界](docs/collaboration.md)。后续优先级见 [方向清单](docs/roadmap.md)，四轮麦轮机械方案带来的接口/运动学变化见 [麦轮底盘适配方向](docs/mecanum-chassis.md)。
