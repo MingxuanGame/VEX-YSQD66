@@ -12,7 +12,8 @@ void idle_tick();
 // opcontrol 进入时取消旧目标、清理触摸沿；屏幕保留菜单，非阻塞。
 void begin_driver();
 // 20ms 调度手动/宏的唯一输出源；不含 delay，不另建任务。
-// 倒计时/回放/重置屏蔽手柄，录制断联即取消；SD IO 只在输出已停止时执行。
+// 倒计时/回放/检查点暂停/重置屏蔽手柄，续录开始重新采样，录制断联即取消。
+// SD IO 只在输出已停止时执行，续录保留前缀并另存新宏。
 void driver_tick();
 
 } // namespace macrorec

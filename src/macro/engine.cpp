@@ -7,7 +7,7 @@ namespace macrorec {
 
 Command map_input(const Input &input) {
     // TODO：其他机构接入后在此增加经限位处理的组件指令，并升级宏协议/映射版本。
-    // 当前 left_x、right_y 及全部按键仅作为原始记录，不控制未安装的机构。
+    // 当前 left_x、right_y 及全部按键不控制未安装的机构；L1 另外用于检查点。
     if (!input.connected) {
         return {};
     }
@@ -36,6 +36,8 @@ bool Engine::start(std::uint32_t now_ms, bool recording) {
     }
     m_hardware.stop();
     m_recording = recording;
+    m_resuming = false;
+    m_checkpoint_button_down = false;
     m_started_ms = now_ms;
     m_last_update_ms = now_ms;
     m_frame_count = 0;
@@ -62,6 +64,25 @@ bool Engine::start_replay(const Clip &clip, std::uint32_t now_ms) {
     return start(now_ms, false);
 }
 
+bool Engine::start_from_checkpoint(const Clip &clip, std::size_t frame_count,
+                                   std::uint32_t now_ms) {
+    if (frame_count == 0 || frame_count > kFrameCount ||
+        (frame_count < kFrameCount && !clip[frame_count - 1].checkpoint)) {
+        return false;
+    }
+    if (!start_replay(clip, now_ms)) {
+        return false;
+    }
+    if (frame_count < kFrameCount) {
+        m_recording = true;
+        m_resuming = true;
+        m_resume_frame_count = frame_count;
+        // 保留所选检查点及前缀；新录制不会继承旧后缀的检查点或指令。
+        std::fill(m_clip.begin() + frame_count, m_clip.end(), Frame{});
+    }
+    return true;
+}
+
 void Engine::fail(const char *reason) {
     m_hardware.stop();
     m_state = State::Fault;
@@ -81,6 +102,16 @@ void Engine::update(std::uint32_t now_ms, bool allowed, const Input &input) {
         return;
     }
     m_last_update_ms = now_ms;
+    if (m_state == State::CheckpointPause) {
+        m_hardware.stop();
+        if (now_ms - m_pause_started_ms < kCountdownMs) {
+            return;
+        }
+        // 暂停不占用宏时间；恢复处重新建立按键基准，暂停时按住 L1 不产生检查点。
+        m_started_ms = now_ms - kCountdownMs - m_frame_count * kPeriodMs;
+        m_checkpoint_button_down = (input.buttons & kCheckpointButton) != 0;
+        m_state = State::Recording;
+    }
     const auto elapsed = now_ms - m_started_ms;
     if (elapsed < kCountdownMs) {
         m_hardware.stop();
@@ -95,6 +126,22 @@ void Engine::update(std::uint32_t now_ms, bool allowed, const Input &input) {
         // 倒计时跨过边界的首个 20ms 调度点作为帧零，避免点击发生于周期中间造成相位偏差。
         m_started_ms = now_ms - kCountdownMs;
         active_ms = 0;
+        m_state = m_recording && !m_resuming ? State::Recording : State::Replaying;
+    }
+    if (m_resuming && m_state == State::Replaying &&
+        (m_frame_count >= m_resume_frame_count || active_ms >= m_resume_frame_count * kPeriodMs)) {
+        if (active_ms < m_resume_frame_count * kPeriodMs) {
+            return;
+        }
+        if (m_frame_count != m_resume_frame_count) {
+            fail("MISSED CHECKPOINT FRAME");
+            return;
+        }
+        m_hardware.stop();
+        m_pause_started_ms = now_ms;
+        m_state = State::CheckpointPause;
+        m_status = "CHECKPOINT: WAIT 3s";
+        return;
     }
     if (active_ms >= kRecordMs) {
         m_hardware.stop();
@@ -122,14 +169,16 @@ void Engine::update(std::uint32_t now_ms, bool allowed, const Input &input) {
         return;
     }
     const auto index = m_frame_count;
-    if (m_recording) {
+    if (m_state == State::Recording) {
         if (!input.connected || !valid_frame({input, {}})) {
             fail("CONTROLLER LOST / INVALID");
             return;
         }
-        m_clip[index] = {input, map_input(input)};
+        const bool button_down = (input.buttons & kCheckpointButton) != 0;
+        m_clip[index] = {input, map_input(input), button_down && !m_checkpoint_button_down};
+        m_checkpoint_button_down = button_down;
         m_state = State::Recording;
-        m_status = "RECORDING";
+        m_status = "RECORDING | L1: CHECKPOINT";
     } else {
         m_state = State::Replaying;
         m_status = "REPLAYING";
@@ -150,7 +199,8 @@ void Engine::cancel() {
 
 bool Engine::busy() const {
     return m_state == State::Countdown || m_state == State::Recording ||
-           m_state == State::Replaying || m_state == State::Resetting;
+           m_state == State::Replaying || m_state == State::CheckpointPause ||
+           m_state == State::Resetting;
 }
 
 State Engine::state() const {
@@ -159,6 +209,13 @@ State Engine::state() const {
 
 bool Engine::recording() const {
     return m_recording;
+}
+
+bool Engine::needs_input(std::uint32_t now_ms) const {
+    return (m_state == State::Recording && elapsed_ms(now_ms) < kRecordMs) ||
+           (m_state == State::Countdown && m_recording && !m_resuming &&
+            elapsed_ms(now_ms) >= kCountdownMs) ||
+           (m_state == State::CheckpointPause && now_ms - m_pause_started_ms >= kCountdownMs);
 }
 
 std::size_t Engine::frame_count() const {
@@ -170,6 +227,9 @@ const Clip &Engine::clip() const {
 }
 
 std::uint32_t Engine::elapsed_ms(std::uint32_t now_ms) const {
+    if (m_state == State::CheckpointPause) {
+        return std::min(now_ms - m_pause_started_ms, kCountdownMs);
+    }
     const auto elapsed = now_ms - m_started_ms;
     if (m_state == State::Countdown) {
         return std::min(elapsed, kCountdownMs);

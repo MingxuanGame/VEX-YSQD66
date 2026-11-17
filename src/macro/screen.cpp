@@ -81,16 +81,18 @@ Touch poll_touch(View view, const std::vector<int> &ids, std::size_t page, bool 
         if (y >= 157 && y <= 212) {
             return {TouchAction::OpenList};
         }
-    } else if (view == View::List) {
+    } else if (view == View::List || view == View::Checkpoints) {
         if (y >= 69 && y < 193) {
             const auto index = page * 4 + static_cast<std::size_t>((y - 69) / 31);
             if (index < ids.size()) {
-                return {TouchAction::Select, ids[index]};
+                return {view == View::List ? TouchAction::Select : TouchAction::Resume, ids[index]};
             }
         }
         if (y >= 207 && y <= 238) {
             return {x < 160 ? TouchAction::Previous
-                            : (x < 320 ? TouchAction::Home : TouchAction::Next)};
+                            : (x < 320 ? (view == View::Checkpoints ? TouchAction::OpenList
+                                                                    : TouchAction::Home)
+                                       : TouchAction::Next)};
         }
     } else if (view == View::Running && y >= 185 && y <= 235) {
         return {TouchAction::Stop};
@@ -131,29 +133,45 @@ void draw_screen(View view, const std::vector<int> &ids, std::size_t page, const
         label(210, 179, "USE MACRO");
         break;
     case View::List:
+    case View::Checkpoints:
         for (std::size_t row = 0; row < 4 && page * 4 + row < ids.size(); ++row) {
             std::array<char, 64> text{};
-            std::snprintf(text.data(), text.size(), "MACRO #%06d    14.5s / 725 frames",
-                          ids[page * 4 + row]);
+            const auto index = page * 4 + row;
+            if (view == View::List) {
+                std::snprintf(text.data(), text.size(), "MACRO #%06d    14.5s / 725 frames",
+                              ids[index]);
+            } else if (ids[index] == static_cast<int>(kFrameCount)) {
+                std::snprintf(text.data(), text.size(), "END 14.50s - FULL REPLAY / STOP");
+            } else {
+                std::snprintf(text.data(), text.size(), "CHECKPOINT %u   %.2fs - RESUME RECORD",
+                              static_cast<unsigned>(index + 1), ids[index] * kPeriodMs / 1000.0);
+            }
             const int y = 69 + static_cast<int>(row) * 31;
             button(12, y, 467, y + 27, text.data());
         }
         button(12, 207, 155, 238, "< PREVIOUS");
-        button(164, 207, 311, 238, "HOME");
+        button(164, 207, 311, 238, view == View::Checkpoints ? "MACROS" : "HOME");
         button(320, 207, 467, 238, "NEXT >");
         break;
     case View::Running: {
         rectangle(12, 68, 467, 169, kBackground);
         pros::screen::print(pros::E_TEXT_MEDIUM, 12, 72, "%s", engine.status());
         const auto elapsed = engine.elapsed_ms(now_ms);
-        const auto total = engine.state() == State::Countdown   ? kCountdownMs
-                           : engine.state() == State::Resetting ? kResetMs
-                                                                : kRecordMs;
+        const auto total =
+            (engine.state() == State::Countdown || engine.state() == State::CheckpointPause)
+                ? kCountdownMs
+            : engine.state() == State::Resetting ? kResetMs
+                                                 : kRecordMs;
         pros::screen::print(pros::E_TEXT_LARGE, 12, 101, "%5.2fs / %5.2fs", elapsed / 1000.0,
                             total / 1000.0);
-        pros::screen::print(pros::E_TEXT_SMALL, 12, 151, "%s | FRAMES %u / 725 | 20ms",
-                            engine.recording() ? "RECORD" : "REPLAY",
-                            static_cast<unsigned>(engine.frame_count()));
+        const auto checkpoint_count =
+            std::count_if(engine.clip().begin(), engine.clip().begin() + engine.frame_count(),
+                          [](const Frame &frame) { return frame.checkpoint; });
+        pros::screen::print(
+            pros::E_TEXT_SMALL, 12, 151, "%s | FRAMES %u / 725 | CP %u",
+            engine.state() == State::Replaying ? "REPLAY"
+                                               : (engine.recording() ? "RECORD" : "REPLAY"),
+            static_cast<unsigned>(engine.frame_count()), static_cast<unsigned>(checkpoint_count));
         if (full) {
             button(12, 185, 467, 235, "STOP / CANCEL", true);
         }

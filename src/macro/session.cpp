@@ -35,6 +35,7 @@ Engine _g_engine(_g_components);
 Clip _g_loaded{};
 View _g_view = View::Home;
 std::vector<int> _g_ids;
+std::vector<int> _g_checkpoints;
 std::size_t _g_page = 0;
 int _g_selected_id = 0;
 bool _g_pending_save = false;
@@ -100,8 +101,12 @@ bool refresh_catalog() {
     return true;
 }
 
+const std::vector<int> &list_items() {
+    return _g_view == View::Checkpoints ? _g_checkpoints : _g_ids;
+}
+
 void render() {
-    draw_screen(_g_view, _g_ids, _g_page, _g_engine, pros::millis(), _g_selected_id,
+    draw_screen(_g_view, list_items(), _g_page, _g_engine, pros::millis(), _g_selected_id,
                 _g_message.data(), _g_retry_save, _g_redraw);
     _g_redraw = false;
 }
@@ -131,7 +136,7 @@ void save_pending() {
 }
 
 void handle_touch(bool driver) {
-    const auto touch = poll_touch(_g_view, _g_ids, _g_page, _g_retry_save);
+    const auto touch = poll_touch(_g_view, list_items(), _g_page, _g_retry_save);
     if (touch.action == TouchAction::None) {
         return;
     }
@@ -149,14 +154,14 @@ void handle_touch(bool driver) {
             _g_selected_id = 0;
             _g_engine.start_recording(pros::millis());
             _g_view = View::Running;
-            message("3s DELAY | 14.5s CAPTURE | 0.5s RESET");
+            message("3s DELAY | L1: ADD CHECKPOINT | 14.5s CAPTURE");
         }
         break;
     case TouchAction::OpenList:
         if (refresh_catalog()) {
             _g_page = 0;
             _g_view = View::List;
-            message(_g_ids.empty() ? "NO MACROS ON SD" : "TAP A MACRO TO REPLAY AFTER 3s");
+            message(_g_ids.empty() ? "NO MACROS ON SD" : "SELECT MACRO, THEN CHECKPOINT OR END");
         }
         break;
     case TouchAction::Select: {
@@ -172,15 +177,30 @@ void handle_touch(bool driver) {
             break;
         }
         _g_selected_id = touch.id;
-        // 读卡结束重新检查模式，3s 倒计时从文件校验完毕后开始。
-        if (practice_allowed() && _g_engine.start_replay(_g_loaded, pros::millis())) {
+        _g_checkpoints.clear();
+        for (std::size_t i = 0; i + 1 < kFrameCount; ++i) {
+            if (_g_loaded[i].checkpoint) {
+                _g_checkpoints.push_back(static_cast<int>(i + 1));
+            }
+        }
+        _g_checkpoints.push_back(static_cast<int>(kFrameCount));
+        _g_page = 0;
+        _g_view = View::Checkpoints;
+        message("START AT ORIGINAL POSE | SELECT CHECKPOINT");
+        break;
+    }
+    case TouchAction::Resume:
+        // 文件在选择宏时已完整校验；启动前再次检查场控和手动模式。
+        if (driver && practice_allowed() &&
+            _g_engine.start_from_checkpoint(_g_loaded, static_cast<std::size_t>(touch.id),
+                                            pros::millis())) {
             _g_view = View::Running;
-            message("REPLAY: CONTROLLER INPUT IGNORED");
+            message(_g_engine.recording() ? "REPLAY TO CHECKPOINT | WAIT 3s | RECORD NEW TAIL"
+                                          : "FULL REPLAY: CONTROLLER INPUT IGNORED");
         } else {
             result("REPLAY START BLOCKED");
         }
         break;
-    }
     case TouchAction::Previous:
         if (_g_page > 0) {
             --_g_page;
@@ -188,7 +208,7 @@ void handle_touch(bool driver) {
         _g_redraw = true;
         break;
     case TouchAction::Next:
-        if ((_g_page + 1) * 4 < _g_ids.size()) {
+        if ((_g_page + 1) * 4 < list_items().size()) {
             ++_g_page;
         }
         _g_redraw = true;
@@ -223,10 +243,7 @@ void tick(bool driver) {
         Input input{};
         // 倒计时期间不读取任何轴/按键；到边界后才采样第一帧。
         const auto now_ms = pros::millis();
-        if (_g_engine.recording() &&
-            ((_g_engine.state() == State::Recording && _g_engine.elapsed_ms(now_ms) < kRecordMs) ||
-             (_g_engine.state() == State::Countdown &&
-              _g_engine.elapsed_ms(now_ms) >= kCountdownMs))) {
+        if (_g_engine.needs_input(now_ms)) {
             input = read_input();
         }
         _g_engine.update(now_ms, driver && practice_allowed(), input);

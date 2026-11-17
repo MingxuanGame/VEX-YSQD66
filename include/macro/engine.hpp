@@ -13,6 +13,7 @@ constexpr std::uint32_t kRecordMs = 14500;
 constexpr std::uint32_t kResetMs = 500;
 constexpr std::size_t kFrameCount = kRecordMs / kPeriodMs;
 constexpr std::uint16_t kButtonMask = 0x0fff;
+constexpr std::uint16_t kCheckpointButton = 1U << 8; // L1，按下沿标记当前帧结束处。
 
 // 四轴原始值 [-127,127]；按键位序见 docs/macro-protocol.md。仅 connected 不写入文件。
 struct Input {
@@ -33,6 +34,7 @@ struct Command {
 struct Frame {
     Input input{};
     Command command{};
+    bool checkpoint = false; // 标记本帧执行完毕（t_ms + 20ms）的边界，与输入电平独立。
 };
 
 using Clip = std::array<Frame, kFrameCount>;
@@ -50,7 +52,17 @@ public:
     virtual void stop() = 0;
 };
 
-enum class State { Idle, Countdown, Recording, Replaying, Resetting, Complete, Cancelled, Fault };
+enum class State {
+    Idle,
+    Countdown,
+    Recording,
+    Replaying,
+    CheckpointPause,
+    Resetting,
+    Complete,
+    Cancelled,
+    Fault
+};
 
 // 单个回调独占本对象及组件写权限；无后台任务。update 每 20ms 调用，时间为毫秒。
 // 倒计时全屏蔽手柄，录制 725 帧后停止 500ms；跳帧、禁用、录制断联或输出失败立即停止。
@@ -62,18 +74,24 @@ public:
     bool start_recording(std::uint32_t now_ms);
     // 完整校验并复制快照；失败不启动，成功后同样倒计时 3000ms。
     bool start_replay(const Clip &clip, std::uint32_t now_ms);
+    // 从原起点回放前 frame_count 帧，到检查点后停车 3s，再续录至 725 帧。
+    // frame_count 必须为带检查点的帧结束边界；725 表示只完整回放，不续录。
+    // 非阻塞，校验失败不启动；保留前缀并丢弃旧后缀，完整续录由调用方另存新宏。
+    bool start_from_checkpoint(const Clip &clip, std::size_t frame_count, std::uint32_t now_ms);
     // allowed=false 立即故障停止；input 仅在录制阶段使用，无返回值，不访问 SD。
     void update(std::uint32_t now_ms, bool allowed, const Input &input = {});
     // 取消目标并停止输出，不保存不完整录制；无阻塞等待。
     void cancel();
-    // 以下为非阻塞查询：是否需要继续周期更新、当前阶段、最近一次运行是否为录制。
+    // 以下为非阻塞查询：是否需要继续周期更新、当前阶段、是否会产生完整录制（含续录）。
     bool busy() const;
     State state() const;
     bool recording() const;
+    // 当前调度点是否需要实时输入；准备、前缀回放和暂停未结束时均为 false。
+    bool needs_input(std::uint32_t now_ms) const;
     // 已成功应用的帧数；clip 引用只在帧数为 725 时代表完整录制，下一次录放会改写它。
     std::size_t frame_count() const;
     const Clip &clip() const;
-    // 本次阶段经过时间（ms），倒计时/重置分别从各自阶段开始计时。
+    // 本次阶段经过时间（ms），倒计时/检查点暂停/重置从各自阶段开始计时。
     std::uint32_t elapsed_ms(std::uint32_t now_ms) const;
     // 返回静态 ASCII 状态/故障说明，不分配内存，不阻塞。
     const char *status() const;
@@ -85,6 +103,10 @@ private:
     Clip m_clip{};
     State m_state = State::Idle;
     bool m_recording = false;
+    bool m_resuming = false;
+    bool m_checkpoint_button_down = false;
+    std::size_t m_resume_frame_count = 0;
+    std::uint32_t m_pause_started_ms = 0;
     std::uint32_t m_started_ms = 0;
     std::uint32_t m_last_update_ms = 0;
     std::size_t m_frame_count = 0;

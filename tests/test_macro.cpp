@@ -8,6 +8,7 @@
 #include <fstream>
 #include <iterator>
 #include <limits>
+#include <sstream>
 #include <string>
 
 namespace {
@@ -195,6 +196,120 @@ void test_scheduler_jitter() {
     CHECK(hardware.writes == 725);
 }
 
+void test_checkpoints() {
+    MacroHardware hardware;
+    macrorec::Engine engine(hardware);
+    CHECK(engine.start_recording(0));
+    for (std::uint32_t t = 0; t < 3000; t += 20) {
+        CHECK(!engine.needs_input(t));
+        engine.update(t, true);
+    }
+    // L1 长按只产生一个检查点，释放后再次按下才能增加。
+    for (std::size_t i = 0; i < macrorec::kFrameCount; ++i) {
+        auto input = input_for(i);
+        input.buttons = i == 0 || i == 1 || i == 3 ? macrorec::kCheckpointButton : 0;
+        engine.update(3000 + i * 20, true, input);
+        CHECK(engine.clip()[i].checkpoint == (i == 0 || i == 3));
+    }
+    engine.cancel();
+
+    macrorec::Clip source{};
+    for (std::size_t i = 0; i < source.size(); ++i) {
+        source[i] = {input_for(i), {static_cast<int>(i % 127), -80}, true};
+    }
+    CHECK(!engine.start_from_checkpoint(source, 0, 0));
+    CHECK(!engine.start_from_checkpoint(source, macrorec::kFrameCount + 1, 0));
+    source[1].checkpoint = false;
+    CHECK(!engine.start_from_checkpoint(source, 2, 0));
+
+    // 首帧、中间及倒数第二帧的边界都应保留前缀并重新录满剩余部分。
+    for (const std::size_t boundary : {1U, 101U, 724U}) {
+        hardware.writes = 0;
+        CHECK(engine.start_from_checkpoint(source, boundary, 0));
+        CHECK(engine.recording());
+        CHECK(!engine.start_from_checkpoint(source, boundary, 0));
+        for (std::uint32_t t = 0; t < 3000 + boundary * 20; t += 20) {
+            CHECK(!engine.needs_input(t));
+            engine.update(t, true); // 前缀无需手柄连接。
+        }
+        CHECK(hardware.writes == static_cast<int>(boundary));
+        const auto pause_ms = static_cast<std::uint32_t>(3000 + boundary * 20);
+        // 周期提前 1ms 时，不得执行已清空的后缀或提前开始暂停。
+        engine.update(pause_ms - 1, true);
+        CHECK(hardware.writes == static_cast<int>(boundary));
+        engine.update(pause_ms, true);
+        CHECK(engine.state() == macrorec::State::CheckpointPause);
+        CHECK(engine.elapsed_ms(pause_ms) == 0);
+        for (std::uint32_t t = 20; t < 3000; t += 20) {
+            CHECK(!engine.needs_input(pause_ms + t));
+            engine.update(pause_ms + t, true, input_for(99));
+            CHECK(hardware.output.chassis_left_power == 0);
+            CHECK(hardware.writes == static_cast<int>(boundary));
+        }
+        const auto resume_ms = pause_ms + 3000;
+        CHECK(engine.needs_input(resume_ms));
+        for (std::size_t i = boundary; i < macrorec::kFrameCount; ++i) {
+            auto input = input_for(55);
+            input.buttons = i == boundary || i == boundary + 2 ? macrorec::kCheckpointButton : 0;
+            engine.update(resume_ms + (i - boundary) * 20, true, input);
+            CHECK(engine.state() == macrorec::State::Recording);
+            CHECK(engine.clip()[i].input.left_x == input.left_x);
+            CHECK(engine.clip()[i].checkpoint == (i == boundary + 2));
+        }
+        for (std::size_t i = 0; i < boundary; ++i) {
+            CHECK(engine.clip()[i].command.chassis_left_power ==
+                  source[i].command.chassis_left_power);
+            CHECK(engine.clip()[i].checkpoint == source[i].checkpoint);
+        }
+        CHECK(source[boundary].checkpoint == (boundary != 1)); // 不修改加载源文件快照。
+        const auto reset_ms = resume_ms + (macrorec::kFrameCount - boundary) * 20;
+        for (std::uint32_t t = 0; t <= 500; t += 20) {
+            engine.update(reset_ms + t, true);
+            CHECK(hardware.output.chassis_right_power == 0);
+        }
+        CHECK(engine.state() == macrorec::State::Complete);
+        CHECK(engine.frame_count() == macrorec::kFrameCount);
+        CHECK(hardware.writes == 725);
+    }
+
+    // 结尾仅回放，不停车三秒续录，也不生成待保存录制。
+    CHECK(engine.start_from_checkpoint(source, macrorec::kFrameCount, 0));
+    CHECK(!engine.recording());
+    for (std::uint32_t t = 0; t <= 18000; t += 20) {
+        CHECK(!engine.needs_input(t));
+        engine.update(t, true);
+        CHECK(engine.state() != macrorec::State::CheckpointPause);
+    }
+    CHECK(engine.state() == macrorec::State::Complete);
+
+    const auto reach_pause = [&]() {
+        CHECK(engine.start_from_checkpoint(source, 1, 0));
+        for (std::uint32_t t = 0; t <= 3020; t += 20) {
+            engine.update(t, true);
+        }
+        CHECK(engine.state() == macrorec::State::CheckpointPause);
+    };
+    reach_pause();
+    engine.update(3040, false);
+    CHECK(engine.state() == macrorec::State::Fault);
+    CHECK(hardware.output.chassis_left_power == 0);
+    reach_pause();
+    engine.cancel();
+    engine.update(3040, true, input_for(0));
+    CHECK(engine.state() == macrorec::State::Cancelled);
+    reach_pause();
+    engine.update(3061, true);
+    CHECK(engine.state() == macrorec::State::Fault);
+    reach_pause();
+    for (std::uint32_t t = 3040; t < 6020; t += 20) {
+        engine.update(t, true);
+    }
+    engine.update(6020, true, {}); // 交还驾驶的首帧断联，必须故障停车。
+    CHECK(engine.state() == macrorec::State::Fault);
+    CHECK(engine.frame_count() == 1);
+    CHECK(hardware.output.chassis_left_power == 0);
+}
+
 void test_storage() {
     const auto ids = macrorec::catalog("macro_000003.csv\nother.txt\nmacro_000001.csv\r\n"
                                        "macro_000003.csv\nmacro_000000.csv\nmacro_000002.csv\n"
@@ -213,6 +328,7 @@ void test_storage() {
     macrorec::Clip clip{};
     for (std::size_t i = 0; i < clip.size(); ++i) {
         clip[i] = {input_for(i), macrorec::map_input(input_for(i))};
+        clip[i].checkpoint = i == 0 || i == 100 || i == 724;
     }
     CHECK(macrorec::save_new_clip(root.c_str(), 1, clip));
     CHECK(!macrorec::save_new_clip(root.c_str(), 1, clip)); // 拒绝覆盖。
@@ -222,6 +338,9 @@ void test_storage() {
     CHECK(macrorec::load_clip(path.data(), loaded));
     CHECK(loaded[724].input.buttons == clip[724].input.buttons);
     CHECK(loaded[724].command.chassis_left_power == clip[724].command.chassis_left_power);
+    for (std::size_t i = 0; i < clip.size(); ++i) {
+        CHECK(loaded[i].checkpoint == clip[i].checkpoint);
+    }
     const auto source = directory / "macro_000001.csv";
     std::ifstream stream(source, std::ios::binary);
     const std::string text((std::istreambuf_iterator<char>(stream)), {});
@@ -240,7 +359,7 @@ void test_storage() {
     modified.replace(modified.find("period_ms,20"), 12, "period_ms,10");
     CHECK(!load_text(modified));
     modified = text;
-    modified.replace(modified.find("VEX_MACRO,1"), 11, "VEX_MACRO,2");
+    modified.replace(modified.find("VEX_MACRO,2"), 11, "VEX_MACRO,3");
     CHECK(!load_text(modified));
     modified = text;
     modified.replace(modified.find("chassis_arcade_v1"), 17, "chassis_arcade_v2");
@@ -252,15 +371,38 @@ void test_storage() {
         replacement.replace(first, first_end - first, row);
         return load_text(replacement);
     };
-    CHECK(!with_first_row("20,0,0,0,0,0,0,0"));
-    CHECK(!with_first_row("0,128,0,0,0,0,0,0"));
-    CHECK(!with_first_row("0,0,0,0,0,4096,0,0"));
-    CHECK(!with_first_row("0,0,0,0,0,0,-128,0"));
-    CHECK(!with_first_row("0,0,0,0,0,0,2147483648,0"));
-    CHECK(!with_first_row("0,0,0,0,0,0,0,0,1"));
-    CHECK(!with_first_row("0,0,0,0,0,0,,0"));
-    CHECK(with_first_row("0,0,0,0,0,0,-42,73"));
+    CHECK(!with_first_row("20,0,0,0,0,0,0,0,0"));
+    CHECK(!with_first_row("0,128,0,0,0,0,0,0,0"));
+    CHECK(!with_first_row("0,0,0,0,0,4096,0,0,0"));
+    CHECK(!with_first_row("0,0,0,0,0,0,-128,0,0"));
+    CHECK(!with_first_row("0,0,0,0,0,0,2147483648,0,0"));
+    CHECK(!with_first_row("0,0,0,0,0,0,0,0"));
+    CHECK(!with_first_row("0,0,0,0,0,0,,0,0"));
+    CHECK(!with_first_row("0,0,0,0,0,0,0,0,2"));
+    CHECK(!with_first_row("0,0,0,0,0,0,0,0,-1"));
+    CHECK(!with_first_row("0,0,0,0,0,0,0,0,0,1"));
+    CHECK(with_first_row("0,0,0,0,0,0,-42,73,1"));
     CHECK(loaded[0].command.chassis_left_power == -42);
+    CHECK(loaded[0].checkpoint);
+    // v1 的 L1 电平不能被追认为检查点；旧文件仍可从结尾完整回放。
+    std::istringstream lines(text);
+    std::string legacy;
+    std::string line;
+    std::size_t line_index = 0;
+    while (std::getline(lines, line)) {
+        if (line_index == 0) {
+            line = "VEX_MACRO,1";
+        } else if (line_index >= 5 && line_index < 6 + macrorec::kFrameCount) {
+            line.erase(line.rfind(','));
+        }
+        legacy += line + '\n';
+        ++line_index;
+    }
+    CHECK(load_text(legacy));
+    for (const auto &frame : loaded) {
+        CHECK(!frame.checkpoint);
+    }
+    CHECK(!load_text("VEX_MACRO,1" + text.substr(text.find('\n')))); // 不混用 v1/v2 列。
     std::string crlf;
     for (char ch : text) {
         if (ch == '\n') {
@@ -280,5 +422,6 @@ void test_macro() {
     test_record_replay();
     test_cancellation_and_faults();
     test_scheduler_jitter();
+    test_checkpoints();
     test_storage();
 }
