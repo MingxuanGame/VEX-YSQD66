@@ -3,14 +3,33 @@
 #include "pros/motor_group.hpp"
 
 #include <algorithm>
+#include <cstdlib>
 #include <limits>
+
+// 功率偏移量，正值补偿右侧，负值补偿左侧。
+#define RIGHT_MOTOR_OFFSET_TO_LEFT 10
 
 namespace chassis {
 namespace {
+static_assert(RIGHT_MOTOR_OFFSET_TO_LEFT >= -127 && RIGHT_MOTOR_OFFSET_TO_LEFT <= 127,
+              "RIGHT_MOTOR_OFFSET_TO_LEFT must be within [-127, 127]");
+
 // 面向车头：左前 2、左后 1，右前 3、右后 4；蓝齿轮，编码器为电机轴角度。
-// TODO：左侧正向、右侧反转沿用原左右侧约定，正功率向前仍需实机核对。
 pros::MotorGroup _g_left({2, 1}, pros::MotorGears::blue, pros::MotorUnits::degrees);
 pros::MotorGroup _g_right({-3, -4}, pros::MotorGears::blue, pros::MotorUnits::degrees);
+
+int apply_offset(int power, int offset) {
+    // 两侧先预留相同补偿余量，避免满功率时独立限幅吞掉偏移；零输入不启动电机。
+    const int max_base_power = 127 - std::abs(RIGHT_MOTOR_OFFSET_TO_LEFT);
+    const int base_power = std::clamp(power, -max_base_power, max_base_power);
+    if (power > 0) {
+        return base_power + offset;
+    }
+    if (power < 0) {
+        return base_power - offset;
+    }
+    return 0;
+}
 } // namespace
 
 void initialize() {
@@ -30,8 +49,12 @@ bool set_power(int left_power, int right_power) {
         stop();
         return false;
     }
-    const auto left_result = _g_left.move(std::clamp(left_power, -127, 127));
-    const auto right_result = _g_right.move(std::clamp(right_power, -127, 127));
+    const int adjusted_left_power =
+        apply_offset(left_power, std::max(0, -RIGHT_MOTOR_OFFSET_TO_LEFT));
+    const int adjusted_right_power =
+        apply_offset(right_power, std::max(0, RIGHT_MOTOR_OFFSET_TO_LEFT));
+    const auto left_result = _g_left.move(adjusted_left_power);
+    const auto right_result = _g_right.move(adjusted_right_power);
     if (left_result == std::numeric_limits<std::int32_t>::max() ||
         right_result == std::numeric_limits<std::int32_t>::max()) {
         stop();
