@@ -1,5 +1,7 @@
 #pragma once
 
+#include "math/pid.hpp"
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -31,9 +33,17 @@ struct Command {
     int chassis_right_power = 0;
 };
 
+// 帧开始、下发指令前的反馈；相对宏起点，电机依次为左前/左后/右前/右后。
+// 电机为电机轴角度，IMU 为连续转角（度，顺时针为正，不折返到 0..360）。
+struct Feedback {
+    std::array<double, 4> motor_position_deg{};
+    double imu_rotation_deg = 0.0;
+};
+
 struct Frame {
     Input input{};
     Command command{};
+    Feedback feedback{};
     bool checkpoint = false;
 };
 
@@ -42,7 +52,7 @@ using Clip = std::array<Frame, kFrameCount>;
 // Arcade 混控映射并等比限幅；断联时输出零。
 Command map_input(const Input &input);
 
-// 检查加载帧的轴范围、按键掩码与组件输出是否合法。
+// 检查加载帧的轴范围、按键掩码、组件输出与反馈有限性。
 bool valid_frame(const Frame &frame);
 
 // 宏执行器依赖的硬件抽象接口；具体实现由适配层提供。
@@ -52,6 +62,8 @@ public:
     virtual void apply(const Command &command) = 0;
     virtual void stop() = 0;
     virtual void reset() = 0;
+    // 非阻塞读取原始反馈（度）；校准未完成或读取失败返回 false，不允许驱动宏。
+    virtual bool read_feedback(Feedback &feedback) = 0;
 };
 
 enum class State {
@@ -90,8 +102,14 @@ public:
 private:
     bool start(std::uint32_t now_ms, bool recording);
     void fail(const char *reason);
+    void reset_pid();
+    bool apply_replay(const Frame &frame, const Feedback &feedback);
 
     Hardware &m_hardware;
+    Feedback m_origin{};
+    math::Pid m_left_pid;
+    math::Pid m_right_pid;
+    math::Pid m_heading_pid;
     Clip m_clip{};
     State m_state = State::Idle;
     bool m_recording = false;

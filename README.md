@@ -7,6 +7,7 @@
 - **手动底盘驾驶**：在 Home 界面下以 20ms 周期读取手柄，通过左摇杆前后与右摇杆转向混控驱动四电机蓝齿轮底盘，并在底盘层统一做左右偏置补偿。
 - **Brain 触屏宏录放**：脱离场控且启用手动模式时，支持 3 秒倒计时、20ms 一帧共 725 帧（14.5 秒）录制、末尾 0.5 秒停车重置及 SD 卡保存（`/usd/macro_NNNNNN.csv`）。
 - **检查点续录**：录制中按 L1 添加检查点；加载已有宏后可从任意检查点回放前缀、停车 3 秒再续录剩余帧并另存新编号。
+- **反馈纠偏**：每帧记录端口 5 的 IMU 连续转角与四电机编码器角度，回放通过编码器与 IMU 的 PID 叠加修正功率；增益使用 `constexpr` 定义，初值待实机标定。上电停车校准 IMU（3 秒超时），状态重置时清零转角参考。
 - **显示独占**：`Makefile` 将 `liblvgl.a` 排除出冷包，由 `pros::screen` 独占绘制按钮与计时页面，防止 LVGL 后台任务覆盖界面。
 
 > 详细协议、CSV 格式与实机待验证清单见 [宏录制协议](docs/macro-protocol.md)；赛制与编程规范见 [AGENTS.md](AGENTS.md) 与 [规则索引](docs/rules/README.md)。
@@ -24,10 +25,10 @@ include/
     engine.hpp           硬件抽象 macrorec::Hardware 与非阻塞状态机 Engine
     screen.hpp           Brain 触屏绘图与触摸轮询
     session.hpp          竞赛回调接入的会话调度入口
-    storage.hpp          v3 CSV 读写与目录编号解析
+    storage.hpp          v4 CSV 读写与目录编号解析（旧版宏需重新录制）
 src/
   main.cpp               PROS 五个竞赛回调与主循环调度
-  chassis.cpp            四电机端口 (2,1 / -3,-4)、蓝齿轮与偏置补偿
+  chassis.cpp            四电机端口 (2,1 / -3,-4)、蓝齿轮、偏置补偿与端口 5 的 IMU
   io/pros_controller.cpp ProsController 继承实现
   math/pid.cpp           PID 计算与状态重置
   macro/                 engine / screen / session / storage 及中文字形数据

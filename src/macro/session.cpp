@@ -20,6 +20,7 @@ public:
     void apply(const Command &command) override;
     void stop() override;
     void reset() override;
+    bool read_feedback(Feedback &feedback) override;
 };
 
 void Components::apply(const Command &command) {
@@ -32,6 +33,10 @@ void Components::stop() {
 
 void Components::reset() {
     chassis::reset_state();
+}
+
+bool Components::read_feedback(Feedback &feedback) {
+    return chassis::read_feedback(feedback.motor_position_deg, feedback.imu_rotation_deg);
 }
 
 Components _g_components;
@@ -298,6 +303,10 @@ void initialize() {
     chassis::initialize();
     _g_engine.cancel();
     initialize_screen();
+    Feedback feedback{};
+    if (!_g_components.read_feedback(feedback)) {
+        message("IMU / ENCODER NOT READY: CHECK DEVICES, RESTART");
+    }
     render();
 }
 

@@ -21,7 +21,7 @@
 | `src/io/`、`include/io/` | `io::Controller` 手柄抽象接口与 `io::ProsController` 真机适配 |
 | `src/macro/`、`include/macro/` | `macrorec::Hardware` 抽象、宏录放状态机 `Engine`、CSV 存储、触屏 UI 与会话调度 |
 | `tools/configure_env.py` | 检测本机 ARM 工具链与 clangd，生成 `compile_commands.json` 与 VS Code 本地配置 |
-| `docs/macro-protocol.md` | Brain 宏录制/回放操作流程与 v3 CSV 文件协议 |
+| `docs/macro-protocol.md` | Brain 宏录制/回放操作流程与 v4 CSV 文件协议 |
 | `docs/rules/`、`docs/licenses/` | 2.1 版规则原件/索引与字体许可 |
 | `.vscode/*.example.json`、`toolchain.example.json` | 可提交的共享配置模板 |
 | `include/pros/`、`include/liblvgl/`、`include/api.h`、`firmware/` | SDK 或第三方内容，日常业务开发不修改 |
