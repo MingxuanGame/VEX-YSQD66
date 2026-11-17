@@ -7,10 +7,10 @@
 
 namespace chassis {
 namespace {
-// 沿用原设备映射：左 3/4 正向、右 1/2 反向；蓝齿轮，编码器为电机轴角度。
-// TODO：实机核对正功率是否向前；沿用原手动安装方向，不声称已标定。
-pros::MotorGroup _g_left({3, 4}, pros::MotorGears::blue, pros::MotorUnits::degrees);
-pros::MotorGroup _g_right({-1, -2}, pros::MotorGears::blue, pros::MotorUnits::degrees);
+// 面向车头：左前 2、左后 1，右前 3、右后 4；蓝齿轮，编码器为电机轴角度。
+// TODO：左侧正向、右侧反转沿用原左右侧约定，正功率向前仍需实机核对。
+pros::MotorGroup _g_left({2, 1}, pros::MotorGears::blue, pros::MotorUnits::degrees);
+pros::MotorGroup _g_right({-3, -4}, pros::MotorGears::blue, pros::MotorUnits::degrees);
 } // namespace
 
 void initialize() {
