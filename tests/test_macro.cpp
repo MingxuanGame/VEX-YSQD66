@@ -3,6 +3,7 @@
 #include "test_common.hpp"
 
 #include <array>
+#include <cerrno>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -330,9 +331,24 @@ void test_storage() {
         clip[i] = {input_for(i), macrorec::map_input(input_for(i))};
         clip[i].checkpoint = i == 0 || i == 100 || i == 724;
     }
-    CHECK(macrorec::save_new_clip(root.c_str(), 1, clip));
-    CHECK(!macrorec::save_new_clip(root.c_str(), 1, clip)); // 拒绝覆盖。
-    CHECK(!macrorec::save_new_clip("/missing-vex-macro-dir", 2, clip));
+    macrorec::SaveError error{"OLD ERROR", EIO};
+    CHECK(macrorec::save_new_clip(root.c_str(), 1, clip, &error));
+    CHECK(std::string(error.stage) == "NONE" && error.error_number == 0);
+    CHECK(!macrorec::save_new_clip(root.c_str(), 1, clip, &error)); // 拒绝覆盖。
+    CHECK(std::string(error.stage) == "EXISTS" && error.error_number == EEXIST);
+    CHECK(!macrorec::save_new_clip("/missing-vex-macro-dir", 2, clip, &error));
+    CHECK(std::string(error.stage) == "CREATE" && error.error_number == ENOENT);
+    CHECK(!macrorec::save_new_clip(root.c_str(), 0, clip, &error));
+    CHECK(std::string(error.stage) == "PATH" && error.error_number == EINVAL);
+    // PROS 把不存在文件的 fopen 失败映射为 ENFILE；真机使用成功枚举，避免该探测。
+    CHECK(macrorec::save_new_clip(root.c_str(), 2, clip, &error, "macro_000001.csv\n"));
+    CHECK(
+        !macrorec::save_new_clip(root.c_str(), 2, clip, &error, "other.txt\nMACRO_000002.CSV\r\n"));
+    CHECK(std::string(error.stage) == "EXISTS" && error.error_number == EEXIST);
+    CHECK(macrorec::save_new_clip(root.c_str(), 3, clip, &error,
+                                  "macro_000003.csv.tmp\nmacro_000030.csv\n"));
+    CHECK(!macrorec::save_new_clip(root.c_str(), 3, clip, &error, "macro_000003.csv"));
+    CHECK(std::string(error.stage) == "EXISTS" && error.error_number == EEXIST);
     CHECK(macrorec::macro_path(root.c_str(), 1, path.data(), path.size()));
     macrorec::Clip loaded{};
     CHECK(macrorec::load_clip(path.data(), loaded));
@@ -412,7 +428,8 @@ void test_storage() {
     }
     CHECK(load_text(crlf));
     clip[724].command.chassis_right_power = 128;
-    CHECK(!macrorec::save_new_clip(root.c_str(), 2, clip));
+    CHECK(!macrorec::save_new_clip(root.c_str(), 2, clip, &error));
+    CHECK(std::string(error.stage) == "VALIDATE" && error.error_number == EINVAL);
     std::filesystem::remove_all(directory);
 }
 } // namespace

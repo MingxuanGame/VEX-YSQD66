@@ -8,6 +8,7 @@
 #include "pros/rtos.hpp"
 
 #include <array>
+#include <cerrno>
 #include <cstdio>
 #include <cstring>
 #include <vector>
@@ -91,10 +92,22 @@ bool refresh_catalog() {
         return false;
     }
     _g_listing.fill('\x7f');
-    if (pros::usd::list_files("\\", _g_listing.data(), _g_listing.size()) != 1 ||
-        _g_listing.back() != '\x7f' ||
-        !std::memchr(_g_listing.data(), '\0', _g_listing.size() - 1)) {
-        result("SD LIST FAILED / TOO MANY FILES");
+    // 空目录允许 SDK 不写入文件名；保护字节放在传给 SDK 的范围之外。
+    // SDK 可以清零整个有效缓冲区，不能用有效范围末字节是否改变判断溢出。
+    _g_listing.front() = '\0';
+    constexpr auto kListingCapacity = _g_listing.size() - 1;
+    errno = 0;
+    if (pros::usd::list_files("/", _g_listing.data(), kListingCapacity) != 1) {
+        const int error = errno;
+        std::array<char, 96> text{};
+        std::snprintf(text.data(), text.size(), "SD LIST FAILED: errno=%d", error);
+        result(text.data());
+        return false;
+    }
+    const auto *end =
+        static_cast<const char *>(std::memchr(_g_listing.data(), '\0', kListingCapacity));
+    if (_g_listing.back() != '\x7f' || !end || end == _g_listing.data() + kListingCapacity - 1) {
+        result("SD LIST BUFFER FULL / INVALID");
         return false;
     }
     _g_ids = catalog(_g_listing.data());
@@ -124,8 +137,13 @@ void save_pending() {
     }
     result("SAVING TO SD - KEEP POWER ON");
     render();
-    if (!save_new_clip("/usd", next, _g_engine.clip())) {
-        result("SD SAVE FAILED - RETRY OR DISCARD");
+    SaveError error{};
+    // refresh_catalog 已成功校验完整枚举；本任务是唯一 SD 写入者。
+    if (!save_new_clip("/usd", next, _g_engine.clip(), &error, _g_listing.data())) {
+        std::array<char, 96> text{};
+        std::snprintf(text.data(), text.size(), "SD SAVE FAILED: %s errno=%d", error.stage,
+                      error.error_number);
+        result(text.data());
         return;
     }
     _g_selected_id = next;
