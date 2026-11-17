@@ -7,10 +7,12 @@
 
 namespace macrorec {
 namespace {
+
 constexpr std::uint32_t kBackground = 0x101820;
 constexpr std::uint32_t kText = 0xFFFFFF;
 constexpr std::uint32_t kButton = 0x236A93;
 constexpr std::uint32_t kStop = 0xA53030;
+
 int _g_press_count = 0;
 bool _g_first_draw = true;
 View _g_previous_view = View::Home;
@@ -48,6 +50,7 @@ void chinese_label(int x, int y, const std::uint32_t *rows, std::size_t count) {
         pros::screen::copy_area(left, y, left + 23, y + 23, _g_glyph_pixels.data(), 24);
     }
 }
+
 } // namespace
 
 void initialize_screen() {
@@ -89,10 +92,13 @@ Touch poll_touch(View view, const std::vector<int> &ids, std::size_t page, bool 
             }
         }
         if (y >= 207 && y <= 238) {
-            return {x < 160 ? TouchAction::Previous
-                            : (x < 320 ? (view == View::Checkpoints ? TouchAction::OpenList
-                                                                    : TouchAction::Home)
-                                       : TouchAction::Next)};
+            if (x < 160) {
+                return {TouchAction::Previous};
+            }
+            if (x < 320) {
+                return {view == View::Checkpoints ? TouchAction::OpenList : TouchAction::Home};
+            }
+            return {TouchAction::Next};
         }
     } else if (view == View::Running && y >= 185 && y <= 235) {
         return {TouchAction::Stop};
@@ -123,17 +129,16 @@ void draw_screen(View view, const std::vector<int> &ids, std::size_t page, const
         pros::screen::print(pros::E_TEXT_MEDIUM, 12, 12, "MACRO  #%06d", selected_id);
         pros::screen::print(pros::E_TEXT_SMALL, 12, 43, "%.57s", message);
     }
-    switch (view) {
-    case View::Home:
+    if (view == View::Home) {
         rectangle(12, 90, 467, 145, kButton);
         chinese_label(40, 106, kNewLabel.data(), 5);
         label(210, 112, "NEW RECORDING");
         rectangle(12, 157, 467, 212, kButton);
         chinese_label(40, 173, kUseLabel.data(), 3);
         label(210, 179, "USE MACRO");
-        break;
-    case View::List:
-    case View::Checkpoints:
+        return;
+    }
+    if (view == View::List || view == View::Checkpoints) {
         for (std::size_t row = 0; row < 4 && page * 4 + row < ids.size(); ++row) {
             std::array<char, 64> text{};
             const auto index = page * 4 + row;
@@ -152,8 +157,9 @@ void draw_screen(View view, const std::vector<int> &ids, std::size_t page, const
         button(12, 207, 155, 238, "< PREVIOUS");
         button(164, 207, 311, 238, view == View::Checkpoints ? "MACROS" : "HOME");
         button(320, 207, 467, 238, "NEXT >");
-        break;
-    case View::Running: {
+        return;
+    }
+    if (view == View::Running) {
         rectangle(12, 68, 467, 169, kBackground);
         pros::screen::print(pros::E_TEXT_MEDIUM, 12, 72, "%s", engine.status());
         const auto elapsed = engine.elapsed_ms(now_ms);
@@ -167,23 +173,22 @@ void draw_screen(View view, const std::vector<int> &ids, std::size_t page, const
         const auto checkpoint_count =
             std::count_if(engine.clip().begin(), engine.clip().begin() + engine.frame_count(),
                           [](const Frame &frame) { return frame.checkpoint; });
-        pros::screen::print(
-            pros::E_TEXT_SMALL, 12, 151, "%s | FRAMES %u / 725 | CP %u",
-            engine.state() == State::Replaying ? "REPLAY"
-                                               : (engine.recording() ? "RECORD" : "REPLAY"),
-            static_cast<unsigned>(engine.frame_count()), static_cast<unsigned>(checkpoint_count));
+        const bool show_record = engine.state() != State::Replaying && engine.recording();
+        pros::screen::print(pros::E_TEXT_SMALL, 12, 151, "%s | FRAMES %u / 725 | CP %u",
+                            show_record ? "RECORD" : "REPLAY",
+                            static_cast<unsigned>(engine.frame_count()),
+                            static_cast<unsigned>(checkpoint_count));
         if (full) {
             button(12, 185, 467, 235, "STOP / CANCEL", true);
         }
-        break;
+        return;
     }
-    case View::Result:
+    if (view == View::Result) {
         label(12, 78, "OUTPUT STOPPED");
         if (retry_save) {
             button(12, 115, 467, 160, "RETRY SD SAVE");
         }
         button(12, 185, 467, 235, retry_save ? "DISCARD / HOME" : "HOME");
-        break;
     }
 }
 

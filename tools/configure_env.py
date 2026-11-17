@@ -17,8 +17,7 @@ def write_json(path, value):
 
 TOOL_NAMES = {"clangd": "clangd", "cc": "arm-none-eabi-gcc",
               "cxx": "arm-none-eabi-g++", "pros": "pros",
-              "make": "make", "cmake": "cmake", "ctest": "ctest",
-              "host": "g++"}
+              "make": "make"}
 
 
 def search_directories():
@@ -113,29 +112,6 @@ def system_includes(compiler, options, language, env):
     return paths
 
 
-def host_entries(config):
-    """Compile commands for sim/tests using the host compiler, not the ARM toolchain."""
-    host = config.get("host")
-    if not host:
-        return []
-    options = ["-std=c++20", "-DENABLE_SIMULATOR",
-               "-I", ROOT.as_posix(),
-               "-I", (ROOT / "include").as_posix(),
-               "-I", (ROOT / "sim").as_posix()]
-    entries = []
-    for folder in ("sim", "tests"):
-        base = ROOT / folder
-        if not base.is_dir():
-            continue
-        for source in sorted(base.rglob("*.cpp")):
-            entries.append({
-                "directory": ROOT.as_posix(),
-                "file": source.as_posix(),
-                "arguments": [host, *options, "-c", source.as_posix()],
-            })
-    return entries
-
-
 def check_project_templates():
     """project.pros 的 template location 可能来自另一台机器；只警告，不阻塞构建。"""
     project = ROOT / "project.pros"
@@ -173,7 +149,6 @@ def configure(config, env, check):
             arguments = [compiler, *options, *includes, "-iquote", (ROOT / "include").as_posix(),
                          "-iquote", (ROOT / "include" / relative.parent).as_posix(), "-c", source.as_posix()]
             entries.append({"directory": ROOT.as_posix(), "file": source.as_posix(), "arguments": arguments})
-    entries.extend(host_entries(config))
     if not entries:
         raise ValueError("No C/C++ sources found in src")
     settings = json.loads((ROOT / ".vscode/settings.example.json").read_text(encoding="utf-8"))
@@ -194,7 +169,7 @@ def configure(config, env, check):
     tasks = json.loads((ROOT / ".vscode/tasks.example.json").read_text(encoding="utf-8"))
     for task in tasks["tasks"]:
         command = task.get("command")
-        if command in ("pros", "make", "cmake", "ctest"):
+        if command in ("pros", "make"):
             task["command"] = config.get(command) or command
             task.setdefault("options", {})["env"] = {
                 **config.get("environment", {}), "PATH": env["PATH"]}
@@ -245,12 +220,6 @@ def main():
         config[name] = detect_tool(name, getattr(args, name), config.get(name), env, directories,
                                    required=name in ("clangd", "cc", "cxx"))
         print(f"{name}: {config[name] or 'not found (optional)'}", flush=True)
-    if not config.get("host"):
-        fallback = shutil.which("clang++", path=env["PATH"]) or shutil.which(
-            "clang++", path=os.pathsep.join(directories))
-        if fallback:
-            config["host"] = Path(fallback).resolve().as_posix()
-            print(f"host: {config['host']} (clang++ fallback)", flush=True)
     # Make compiler and PROS dependencies available to spawned tools and VS Code tasks.
     paths = [str(Path(config[name]).parent) for name in TOOL_NAMES if config[name]]
     for path in list(paths):

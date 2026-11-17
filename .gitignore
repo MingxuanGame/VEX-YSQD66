@@ -7,10 +7,6 @@
 *.elf
 *.exe
 
-# CMake
-build/
-cmake-build-*/
-
 # PROS
 /bin/
 # Keep shared VS Code project configuration

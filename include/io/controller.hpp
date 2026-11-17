@@ -2,9 +2,7 @@
 
 /**
  * @file controller.hpp
- * @brief 手柄抽象接口。
- *        业务逻辑只依赖这个接口，不直接依赖 pros::Controller，
- *        因此同一套读取逻辑可以在真车和仿真/测试中复用。
+ * @brief 手柄抽象接口。业务层通过该接口读取输入，与 PROS 具体硬件解耦。
  */
 
 namespace io {

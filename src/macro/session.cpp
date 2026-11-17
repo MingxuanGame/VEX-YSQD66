@@ -1,50 +1,37 @@
 #include "macro/session.hpp"
+#include "chassis.h"
+#include "io/pros_controller.hpp"
 #include "macro/engine.hpp"
 #include "macro/screen.hpp"
 #include "macro/storage.hpp"
-#include "chassis.h"
-#include "io/pros_controller.hpp"
 #include "pros/misc.hpp"
 #include "pros/rtos.hpp"
 
 #include <array>
 #include <cerrno>
 #include <cstdio>
-#include <cstring>
 #include <vector>
 
 namespace macrorec {
 namespace {
+
 class Components final : public Hardware {
 public:
-    bool apply(const Command &command) override;
+    void apply(const Command &command) override;
     void stop() override;
-    bool reset() override;
-    std::uint32_t time_ms(std::uint32_t fallback_ms) const override;
-
-private:
-    bool m_ready = false;
+    void reset() override;
 };
 
-bool Components::apply(const Command &command) {
-    // TODO：机构端口、方向与限位标定后扩展组件输出；目前只控制底盘。
-    return m_ready && chassis::set_power(command.chassis_left_power, command.chassis_right_power);
+void Components::apply(const Command &command) {
+    chassis::set_power(command.chassis_left_power, command.chassis_right_power);
 }
 
 void Components::stop() {
     chassis::stop();
-    // TODO：接入机构时同时停止其输出、取消缓存目标；不在这里执行机械归零。
 }
 
-bool Components::reset() {
-    m_ready = false;
-    m_ready = chassis::reset_state();
-    // TODO：机构接入时在这里取消全部目标、清除按键边沿/切换状态并检查重置结果。
-    return m_ready;
-}
-
-std::uint32_t Components::time_ms(std::uint32_t) const {
-    return pros::millis();
+void Components::reset() {
+    chassis::reset_state();
 }
 
 Components _g_components;
@@ -59,12 +46,9 @@ int _g_selected_id = 0;
 bool _g_pending_save = false;
 bool _g_retry_save = false;
 bool _g_redraw = true;
-bool _g_input_cached = false;
-Input _g_cached_input{};
 std::uint32_t _g_service_ms = 0;
 std::array<char, 96> _g_message{"20ms | 14.5s record + 0.5s reset"};
-// SD 枚举缓冲区不放在 PROS 竞赛回调的小栈上；满缓冲区时拒绝保存，避免覆盖旧编号。
-std::array<char, 32768> _g_listing{};
+std::array<char, 16384> _g_listing{};
 
 void message(const char *text) {
     std::snprintf(_g_message.data(), _g_message.size(), "%s", text);
@@ -77,7 +61,7 @@ void result(const char *text) {
 }
 
 bool practice_allowed() {
-    // Override 2.1 <R9>（英文第 61 页）、<GG12>/<GG13>（46-47 页）：屏幕不能绕过场控。
+    // Override 2.1 <R9>、<GG12>/<GG13>：接入场控或非手动启用阶段禁止录放。
     return !pros::competition::is_connected() && !pros::competition::is_disabled() &&
            !pros::competition::is_autonomous();
 }
@@ -111,23 +95,12 @@ bool refresh_catalog() {
         result("NO SD CARD");
         return false;
     }
-    _g_listing.fill('\x7f');
-    // 空目录允许 SDK 不写入文件名；保护字节放在传给 SDK 的范围之外。
-    // SDK 可以清零整个有效缓冲区，不能用有效范围末字节是否改变判断溢出。
-    _g_listing.front() = '\0';
-    constexpr auto kListingCapacity = _g_listing.size() - 1;
+    _g_listing.fill('\0');
     errno = 0;
-    if (pros::usd::list_files("/", _g_listing.data(), kListingCapacity) != 1) {
-        const int error = errno;
+    if (pros::usd::list_files("/", _g_listing.data(), _g_listing.size() - 1) != 1) {
         std::array<char, 96> text{};
-        std::snprintf(text.data(), text.size(), "SD LIST FAILED: errno=%d", error);
+        std::snprintf(text.data(), text.size(), "SD LIST FAILED: errno=%d", errno);
         result(text.data());
-        return false;
-    }
-    const auto *end =
-        static_cast<const char *>(std::memchr(_g_listing.data(), '\0', kListingCapacity));
-    if (_g_listing.back() != '\x7f' || !end || end == _g_listing.data() + kListingCapacity - 1) {
-        result("SD LIST BUFFER FULL / INVALID");
         return false;
     }
     _g_ids = catalog(_g_listing.data());
@@ -158,7 +131,6 @@ void save_pending() {
     result("SAVING TO SD - KEEP POWER ON");
     render();
     SaveError error{};
-    // refresh_catalog 已成功校验完整枚举；本任务是唯一 SD 写入者。
     if (!save_new_clip("/usd", next, _g_engine.clip(), &error, _g_listing.data())) {
         std::array<char, 96> text{};
         std::snprintf(text.data(), text.size(), "SD SAVE FAILED: %s errno=%d", error.stage,
@@ -178,8 +150,7 @@ void handle_touch(bool driver) {
     if (touch.action == TouchAction::None) {
         return;
     }
-    // 所有菜单动作先取消手动输出，SD 访问期间不会保留最后一帧电机功率。
-    _g_input_cached = false;
+    // 切换菜单或访问 SD 前立即停止电机输出。
     _g_components.stop();
     switch (touch.action) {
     case TouchAction::NewRecording:
@@ -188,17 +159,14 @@ void handle_touch(bool driver) {
         } else if (refresh_catalog()) {
             if (!_g_ids.empty() && _g_ids.back() == kMaxMacroId) {
                 result("MACRO NUMBER LIMIT REACHED");
-                break;
+                return;
             }
             _g_selected_id = 0;
-            if (!_g_engine.start_recording(pros::millis())) {
-                result(_g_engine.status());
-                break;
-            }
+            _g_engine.start_recording(pros::millis());
             _g_view = View::Running;
             message("3s DELAY | L1: ADD CHECKPOINT | 14.5s CAPTURE");
         }
-        break;
+        return;
     case TouchAction::OpenList:
         _g_visible_ids.clear();
         if (refresh_catalog()) {
@@ -214,23 +182,19 @@ void handle_touch(bool driver) {
             message(_g_visible_ids.empty() ? "NO CURRENT MACROS ON SD"
                                            : "SELECT MACRO, THEN CHECKPOINT OR END");
         }
-        break;
+        return;
     case TouchAction::Select: {
         if (!driver || !practice_allowed()) {
             result("REPLAY: UNPLUG FIELD, ENABLE DRIVER");
-            break;
+            return;
         }
         _g_engine.cancel();
-        if (_g_engine.state() == State::Fault) {
-            result(_g_engine.status());
-            break;
-        }
         std::array<char, 192> path{};
         if (pros::usd::is_installed() != 1 ||
             !macro_path("/usd", touch.id, path.data(), path.size()) ||
             !load_clip(path.data(), _g_loaded)) {
             result("SD READ FAILED / INVALID MACRO");
-            break;
+            return;
         }
         _g_selected_id = touch.id;
         _g_checkpoints.clear();
@@ -243,10 +207,9 @@ void handle_touch(bool driver) {
         _g_page = 0;
         _g_view = View::Checkpoints;
         message("START AT ORIGINAL POSE | SELECT CHECKPOINT");
-        break;
+        return;
     }
     case TouchAction::Resume:
-        // 文件在选择宏时已完整校验；启动前再次检查场控和手动模式。
         if (driver && practice_allowed() &&
             _g_engine.start_from_checkpoint(_g_loaded, static_cast<std::size_t>(touch.id),
                                             pros::millis())) {
@@ -256,37 +219,37 @@ void handle_touch(bool driver) {
         } else {
             result("REPLAY START BLOCKED");
         }
-        break;
+        return;
     case TouchAction::Previous:
         if (_g_page > 0) {
             --_g_page;
         }
         _g_redraw = true;
-        break;
+        return;
     case TouchAction::Next:
         if ((_g_page + 1) * 4 < list_items().size()) {
             ++_g_page;
         }
         _g_redraw = true;
-        break;
+        return;
     case TouchAction::Home:
         _g_engine.cancel();
         _g_pending_save = false;
         _g_retry_save = false;
         _g_view = View::Home;
         message("20ms | 14.5s record + 0.5s reset");
-        break;
+        return;
     case TouchAction::Stop:
         _g_engine.cancel();
         result("CANCELLED - INCOMPLETE RECORD DISCARDED");
-        break;
+        return;
     case TouchAction::Retry:
         if (_g_pending_save) {
             save_pending();
         }
-        break;
+        return;
     case TouchAction::None:
-        break;
+        return;
     }
 }
 
@@ -294,30 +257,15 @@ void tick(bool driver) {
     if (_g_pending_save && !_g_retry_save) {
         save_pending();
     }
-    const auto service_now_ms = pros::millis();
-    const auto state = _g_engine.state();
-    const bool moving = state == State::Recording || state == State::Replaying;
-    // 每 20ms 服务一次触摸/绘图，给临近帧边界的采样和电机下发留出时间。
-    const bool service_ui = service_now_ms - _g_service_ms >= kPeriodMs &&
-                            (!moving || _g_engine.frame_wait_ms(service_now_ms) >= 5);
+    const auto now_ms = pros::millis();
+    const bool service_ui = now_ms - _g_service_ms >= kPeriodMs;
     if (service_ui) {
-        _g_service_ms = service_now_ms;
+        _g_service_ms = now_ms;
         handle_touch(driver);
     }
     if (_g_engine.busy()) {
-        const auto previous_count = _g_engine.frame_count();
-        // 后续帧提前最多 2ms 采样一次，避免 16 个手柄读取挤占输出边界。
-        // 倒计时/检查点暂停仍须结束后才读取首帧，之后以实际下发完成时刻建立时基。
-        const auto now_ms = pros::millis();
-        if (_g_engine.needs_input(now_ms) && !_g_input_cached) {
-            _g_cached_input = read_input();
-            _g_input_cached = true;
-        }
-        _g_engine.update(pros::millis(), driver && practice_allowed(),
-                         _g_input_cached ? _g_cached_input : Input{});
-        if (_g_engine.frame_count() != previous_count || !_g_engine.busy()) {
-            _g_input_cached = false;
-        }
+        const Input input = _g_engine.recording() ? read_input() : Input{};
+        _g_engine.update(pros::millis(), driver && practice_allowed(), input);
         if (_g_engine.state() == State::Complete) {
             if (_g_engine.recording()) {
                 _g_pending_save = true;
@@ -331,8 +279,9 @@ void tick(bool driver) {
     } else if (driver && _g_view == View::Home && !pros::competition::is_disabled() &&
                !pros::competition::is_autonomous()) {
         const auto input = read_input();
-        if (!input.connected || !valid_frame({input, {}}) ||
-            !_g_components.apply(map_input(input))) {
+        if (input.connected) {
+            _g_components.apply(map_input(input));
+        } else {
             _g_components.stop();
         }
     } else {
@@ -342,31 +291,26 @@ void tick(bool driver) {
         render();
     }
 }
+
 } // namespace
 
 void initialize() {
     chassis::initialize();
     _g_engine.cancel();
     initialize_screen();
-    if (_g_engine.state() == State::Fault) {
-        result(_g_engine.status());
-    }
     render();
 }
 
 void stop() {
-    _g_input_cached = false;
     const bool was_busy = _g_engine.busy();
-    // 已采齐的录制在模式退出时只需停止；保留 RAM 供下一空闲回调保存。
     const auto state = _g_engine.state();
+    // 已采齐 725 帧的录制在退出时保留 RAM，由后续空闲周期存盘。
     if (_g_engine.recording() && _g_engine.frame_count() == kFrameCount &&
         (state == State::Resetting || state == State::Complete)) {
         _g_pending_save = true;
     }
     _g_engine.cancel();
-    if (_g_engine.state() == State::Fault) {
-        result(_g_engine.status());
-    } else if (was_busy) {
+    if (was_busy) {
         result("MODE CHANGED - OUTPUT ZERO");
     }
     reset_touch();

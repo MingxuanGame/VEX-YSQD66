@@ -13,9 +13,11 @@ CheckOptions:
   readability-identifier-naming.GlobalVariablePrefix: '_g_'
   readability-identifier-naming.PrivateMemberPrefix: 'm_'
   readability-identifier-naming.ProtectedMemberPrefix: 'm_'
-  readability-identifier-naming.ConstantCase: CamelCase
-  readability-identifier-naming.ConstantPrefix: 'k'
+  readability-identifier-naming.ConstexprVariableCase: CamelCase
+  readability-identifier-naming.ConstexprVariablePrefix: 'k'
   readability-identifier-naming.GlobalConstantCase: CamelCase
   readability-identifier-naming.GlobalConstantPrefix: 'k'
   readability-identifier-naming.ClassConstantCase: CamelCase
   readability-identifier-naming.ClassConstantPrefix: 'k'
+  readability-identifier-naming.EnumConstantCase: CamelCase
+  readability-identifier-naming.LocalConstantCase: lower_case

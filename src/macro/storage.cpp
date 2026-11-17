@@ -3,13 +3,12 @@
 #include <algorithm>
 #include <array>
 #include <cerrno>
-#include <climits>
 #include <cstdio>
-#include <cstdlib>
 #include <cstring>
 
 namespace macrorec {
 namespace {
+
 constexpr std::array<const char *, 6> kHeader{
     "VEX_MACRO,3",
     "period_ms,20",
@@ -30,9 +29,7 @@ bool filename_equal(const char *name, std::size_t length, const char *expected) 
         return false;
     }
     for (std::size_t i = 0; i < length; ++i) {
-        const auto lower = [](char value) {
-            return value >= 'A' && value <= 'Z' ? value + ('a' - 'A') : value;
-        };
+        const auto lower = [](char c) { return (c >= 'A' && c <= 'Z') ? c + ('a' - 'A') : c; };
         if (lower(name[i]) != lower(expected[i])) {
             return false;
         }
@@ -46,8 +43,9 @@ bool listing_contains(const char *listing, const char *name) {
         if (!end) {
             end = cursor + std::strlen(cursor);
         }
-        const auto length = end - cursor;
-        if (filename_equal(cursor, length > 0 && end[-1] == '\r' ? length - 1 : length, name)) {
+        const auto length = static_cast<std::size_t>(end - cursor);
+        const auto trimmed = (length > 0 && end[-1] == '\r') ? length - 1 : length;
+        if (filename_equal(cursor, trimmed, name)) {
             return true;
         }
         cursor = *end ? end + 1 : end;
@@ -59,43 +57,40 @@ bool read_line(std::FILE *file, char *line, std::size_t capacity) {
     if (!std::fgets(line, static_cast<int>(capacity), file)) {
         return false;
     }
-    const auto length = std::strlen(line);
+    auto length = std::strlen(line);
     if (length == 0 || line[length - 1] != '\n') {
         return false;
     }
-    line[length - 1] = '\0';
-    if (length > 1 && line[length - 2] == '\r') {
-        line[length - 2] = '\0';
+    line[--length] = '\0';
+    if (length > 0 && line[length - 1] == '\r') {
+        line[--length] = '\0';
     }
     return true;
 }
 
-bool parse_row(char *line, std::size_t index, Frame &frame) {
-    std::array<int, 9> values{};
-    constexpr std::size_t count = 9;
-    char *cursor = line;
-    for (std::size_t i = 0; i < count; ++i) {
-        if (!((*cursor >= '0' && *cursor <= '9') || *cursor == '-')) {
-            return false;
-        }
-        char *end = nullptr;
-        errno = 0;
-        const long value = std::strtol(cursor, &end, 10);
-        if (errno != 0 || end == cursor || value < INT_MIN || value > INT_MAX ||
-            *end != (i + 1 == count ? '\0' : ',')) {
-            return false;
-        }
-        values[i] = static_cast<int>(value);
-        cursor = end + (i + 1 == count ? 0 : 1);
-    }
-    if (values[0] != static_cast<int>(index * kPeriodMs) || values[5] < 0 ||
-        values[5] > kButtonMask || (values[8] != 0 && values[8] != 1)) {
+bool parse_row(const char *line, std::size_t index, Frame &frame) {
+    int t_ms = 0;
+    int lx = 0;
+    int ly = 0;
+    int rx = 0;
+    int ry = 0;
+    int buttons = 0;
+    int left_power = 0;
+    int right_power = 0;
+    int checkpoint = 0;
+    int consumed = 0;
+    if (std::sscanf(line, "%d,%d,%d,%d,%d,%d,%d,%d,%d%n", &t_ms, &lx, &ly, &rx, &ry, &buttons,
+                    &left_power, &right_power, &checkpoint, &consumed) != 9 ||
+        line[consumed] != '\0') {
         return false;
     }
-    frame = {
-        {values[1], values[2], values[3], values[4], static_cast<std::uint16_t>(values[5]), true},
-        {values[6], values[7]},
-        values[8] == 1};
+    if (t_ms != static_cast<int>(index * kPeriodMs) || buttons < 0 || buttons > kButtonMask ||
+        (checkpoint != 0 && checkpoint != 1)) {
+        return false;
+    }
+    frame = {{lx, ly, rx, ry, static_cast<std::uint16_t>(buttons), true},
+             {left_power, right_power},
+             checkpoint == 1};
     return valid_frame(frame);
 }
 
@@ -109,7 +104,7 @@ bool read_header(std::FILE *file) {
     return true;
 }
 
-// expected 非空时只使用一帧栈空间回读验证，避免在 PROS 回调栈上构造整个 Clip。
+// expected 非空时逐帧比对，避免在回调栈上分配第二个 Clip。
 bool read_file(std::FILE *file, Clip *output, const Clip *expected) {
     if (!read_header(file)) {
         return false;
@@ -124,15 +119,15 @@ bool read_file(std::FILE *file, Clip *output, const Clip *expected) {
             (*output)[i] = frame;
         }
         if (expected) {
-            const auto &original = (*expected)[i];
-            if (frame.input.left_x != original.input.left_x ||
-                frame.input.left_y != original.input.left_y ||
-                frame.input.right_x != original.input.right_x ||
-                frame.input.right_y != original.input.right_y ||
-                frame.input.buttons != original.input.buttons ||
-                frame.command.chassis_left_power != original.command.chassis_left_power ||
-                frame.command.chassis_right_power != original.command.chassis_right_power ||
-                frame.checkpoint != original.checkpoint) {
+            const auto &orig = (*expected)[i];
+            if (frame.input.left_x != orig.input.left_x ||
+                frame.input.left_y != orig.input.left_y ||
+                frame.input.right_x != orig.input.right_x ||
+                frame.input.right_y != orig.input.right_y ||
+                frame.input.buttons != orig.input.buttons ||
+                frame.command.chassis_left_power != orig.command.chassis_left_power ||
+                frame.command.chassis_right_power != orig.command.chassis_right_power ||
+                frame.checkpoint != orig.checkpoint) {
                 return false;
             }
         }
@@ -140,6 +135,7 @@ bool read_file(std::FILE *file, Clip *output, const Clip *expected) {
     return read_line(file, line.data(), line.size()) && std::strcmp(line.data(), "END,725") == 0 &&
            std::fgetc(file) == EOF && !std::ferror(file);
 }
+
 } // namespace
 
 std::vector<int> catalog(const char *listing) {
@@ -147,8 +143,7 @@ std::vector<int> catalog(const char *listing) {
     if (!listing) {
         return ids;
     }
-    const char *cursor = listing;
-    while (*cursor) {
+    for (const char *cursor = listing; *cursor;) {
         const char *end = std::strchr(cursor, '\n');
         if (!end) {
             end = cursor + std::strlen(cursor);
@@ -190,8 +185,7 @@ bool compatible_clip(const char *path) {
         return false;
     }
     const bool valid = read_header(file);
-    const bool closed = std::fclose(file) == 0;
-    return valid && closed;
+    return std::fclose(file) == 0 && valid;
 }
 
 bool load_clip(const char *path, Clip &clip) {
@@ -200,8 +194,7 @@ bool load_clip(const char *path, Clip &clip) {
         return false;
     }
     const bool valid = read_file(file, &clip, nullptr);
-    const bool closed = std::fclose(file) == 0;
-    return valid && closed;
+    return std::fclose(file) == 0 && valid;
 }
 
 bool save_new_clip(const char *directory, int id, const Clip &clip, SaveError *error,
@@ -209,87 +202,53 @@ bool save_new_clip(const char *directory, int id, const Clip &clip, SaveError *e
     if (error) {
         *error = {};
     }
-    for (const auto &frame : clip) {
-        if (!valid_frame(frame)) {
-            return save_failure(error, "VALIDATE", EINVAL);
-        }
-    }
     std::array<char, 192> path{};
     if (!macro_path(directory, id, path.data(), path.size())) {
         return save_failure(error, "PATH", EINVAL);
     }
+    // PROS 4.2.3 下 fopen 不存在文件也会返回 ENFILE(23)，优先使用目录列表判重。
     if (directory_listing) {
         const char *name = std::strrchr(path.data(), '/');
         if (listing_contains(directory_listing, name ? name + 1 : path.data())) {
             return save_failure(error, "EXISTS", EEXIST);
         }
-    } else {
-        errno = 0;
-        auto *existing = std::fopen(path.data(), "rb");
-        if (existing) {
-            std::fclose(existing);
-            return save_failure(error, "EXISTS", EEXIST);
-        }
-        if (errno != ENOENT) {
-            return save_failure(error, "CHECK", errno);
-        }
+    } else if (auto *existing = std::fopen(path.data(), "rb")) {
+        std::fclose(existing);
+        return save_failure(error, "EXISTS", EEXIST);
     }
-    // 单任务为 SD 的唯一写入者；不使用 PROS 未承诺支持的 rename/O_EXCL。
+
     errno = 0;
     auto *file = std::fopen(path.data(), "wb");
     if (!file) {
-        return save_failure(error, "CREATE", errno);
+        return save_failure(error, "OPEN", errno);
     }
-    const auto write_failure = [&](const char *stage) {
-        // fclose 可能另报错误，先保留使本次保存失败的原始 errno。
-        const int write_error = errno;
-        std::fclose(file);
-        return save_failure(error, stage, write_error);
-    };
     for (const char *header : kHeader) {
-        errno = 0;
-        if (std::fprintf(file, "%s\n", header) <= 0) {
-            return write_failure("HEADER");
-        }
+        std::fprintf(file, "%s\n", header);
     }
     for (std::size_t i = 0; i < clip.size(); ++i) {
         const auto &frame = clip[i];
-        errno = 0;
-        if (std::fprintf(
-                file, "%lu,%d,%d,%d,%d,%u,%d,%d,%d\n", static_cast<unsigned long>(i * kPeriodMs),
-                frame.input.left_x, frame.input.left_y, frame.input.right_x, frame.input.right_y,
-                static_cast<unsigned>(frame.input.buttons), frame.command.chassis_left_power,
-                frame.command.chassis_right_power, frame.checkpoint ? 1 : 0) <= 0) {
-            return write_failure("FRAMES");
-        }
+        std::fprintf(file, "%lu,%d,%d,%d,%d,%u,%d,%d,%d\n",
+                     static_cast<unsigned long>(i * kPeriodMs), frame.input.left_x,
+                     frame.input.left_y, frame.input.right_x, frame.input.right_y,
+                     static_cast<unsigned>(frame.input.buttons), frame.command.chassis_left_power,
+                     frame.command.chassis_right_power, frame.checkpoint ? 1 : 0);
     }
-    errno = 0;
-    if (std::fprintf(file, "END,725\n") <= 0) {
-        return write_failure("TRAILER");
+    std::fprintf(file, "END,725\n");
+    const bool write_ok = !std::ferror(file) && std::fflush(file) == 0;
+    const int write_err = errno;
+    if (std::fclose(file) != 0 || !write_ok) {
+        return save_failure(error, "WRITE", write_err != 0 ? write_err : errno);
     }
-    errno = 0;
-    if (std::fflush(file) != 0) {
-        return write_failure("FLUSH");
-    }
-    errno = 0;
-    if (std::fclose(file) != 0) {
-        return save_failure(error, "CLOSE", errno);
-    }
+
     errno = 0;
     file = std::fopen(path.data(), "rb");
     if (!file) {
-        return save_failure(error, "REOPEN", errno);
+        return save_failure(error, "VERIFY", errno);
     }
-    errno = 0;
     const bool verified = read_file(file, nullptr, &clip);
-    const int verify_error = std::ferror(file) ? errno : 0;
-    errno = 0;
-    const bool closed = std::fclose(file) == 0;
-    if (!verified) {
-        return save_failure(error, "VERIFY", verify_error);
-    }
-    if (!closed) {
-        return save_failure(error, "VERIFY_CLOSE", errno);
+    const int verify_err = std::ferror(file) ? errno : 0;
+    if (std::fclose(file) != 0 || !verified) {
+        return save_failure(error, "VERIFY", verify_err != 0 ? verify_err : errno);
     }
     return true;
 }

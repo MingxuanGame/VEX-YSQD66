@@ -2,36 +2,31 @@
 
 #include "macro/engine.hpp"
 
+#include <cstddef>
 #include <vector>
 
 namespace macrorec {
 
 constexpr int kMaxMacroId = 999999;
 
-// 保存诊断；stage 指向静态阶段名称，无需释放，error_number 为失败时的 errno。
-// SDK 未提供错误码或回读内容不匹配时可能为 0；参数/已有文件错误使用 EINVAL/EEXIST。
 struct SaveError {
     const char *stage = "NONE";
     int error_number = 0;
 };
 
-// 从 SDK 提供的换行分隔文件名中提取 macro_NNNNNN.csv，按编号排序去重。
-// 非阻塞，不验证内容；损坏文件同样占用编号，防止覆盖；其他名称被忽略。
+// 从换行分隔的目录列表中提取 macro_NNNNNN.csv 编号（升序去重）。
 std::vector<int> catalog(const char *listing);
-// 路径 directory/macro_NNNNNN.csv；非法编号/超长路径返回 false，不修改文件。
+
+// 生成 directory/macro_NNNNNN.csv 路径；编号越界或缓冲区不足返回 false。
 bool macro_path(const char *directory, int id, char *path, std::size_t capacity);
-// 同步读取当前 v3 的六行头部，用于页面过滤；旧版本、头部不匹配或 IO 失败返回 false。
-// 只能停车后调用，不验证帧内容；选择时仍须使用 load_clip 完整校验。
+
+// 读取并校验 v3 六行头部，用于列表过滤。
 bool compatible_clip(const char *path);
-// 同步阻塞 IO，只能停车后调用。仅验证 v3 协议、725 帧、尾标记和 EOF。
-// 失败不返回可用宏，调用方不得使用部分载入的数据。
+
+// 读取并完整校验 v3 宏文件（6 行头部 + 725 帧 + END,725 + EOF）。
 bool load_clip(const char *path, Clip &clip);
-// 同步以 v3 写入不存在的新文件，flush/close 后逐帧（含检查点）回读校验，成功才返回 true。
-// 不覆盖任何既有文件；失败可能留下不完整文件并占用编号，下次应递增。
-// error 可为空；非空时成功清空诊断，失败保留首个错误，关闭文件不覆盖原始错误码。
-// directory_listing 非空时，使用同一目录的完整、新鲜枚举替代 fopen 存在性探测。
-// 调用方须保证枚举成功且未截断、从枚举到保存期间只有本任务写 SD；按 FAT32 忽略大小写。
-// PROS 的不存在文件打开失败也会报告 ENFILE，不能据此断言文件不存在。
+
+// 写入新宏文件并回读校验，不覆盖已有文件；失败时记录阶段与 errno。
 bool save_new_clip(const char *directory, int id, const Clip &clip, SaveError *error = nullptr,
                    const char *directory_listing = nullptr);
 

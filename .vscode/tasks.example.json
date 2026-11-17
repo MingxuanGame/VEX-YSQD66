@@ -107,49 +107,6 @@
         "PROS: Upload"
       ],
       "problemMatcher": []
-    },
-    {
-      "label": "CMake: Configure (host)",
-      "type": "process",
-      "command": "cmake",
-      "args": [
-        "--preset",
-        "host-debug"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "CMake: Build (host)",
-      "type": "process",
-      "command": "cmake",
-      "args": [
-        "--build",
-        "--preset",
-        "host-debug"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": [
-        "$gcc"
-      ]
-    },
-    {
-      "label": "CMake: Test (host)",
-      "type": "process",
-      "command": "ctest",
-      "args": [
-        "--preset",
-        "host-debug",
-        "--output-on-failure"
-      ],
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "problemMatcher": []
     }
   ]
 }
