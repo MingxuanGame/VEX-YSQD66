@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 
 namespace macrorec {
@@ -39,6 +40,11 @@ bool valid_frame(const Frame &frame) {
            std::all_of(frame.feedback.motor_position_deg.begin(),
                        frame.feedback.motor_position_deg.end(),
                        [](double position_deg) { return std::isfinite(position_deg); });
+}
+
+bool Hardware::read_debug_info(DebugInfo &info) const {
+    (void)info;
+    return false;
 }
 
 Engine::Engine(Hardware &hardware)
@@ -93,6 +99,7 @@ bool Engine::start(std::uint32_t now_ms, bool recording) {
     m_frame_count = 0;
     m_phase_start_ms = now_ms;
     m_last_frame_ms = 0;
+    m_debug_info = {};
     m_state = State::Countdown;
     m_status = "INPUT LOCKED";
     return true;
@@ -128,6 +135,18 @@ void Engine::fail(const char *reason) {
     m_status = reason;
 }
 
+void Engine::capture_sensor_debug(const char *phase, std::size_t frame_index) {
+    m_debug_info = {};
+    if (!m_hardware.read_debug_info(m_debug_info)) {
+        return;
+    }
+    m_debug_info.active = true;
+    std::array<char, 64> prefixed{};
+    std::snprintf(prefixed.data(), prefixed.size(), "%s F%u | %.40s", phase,
+                  static_cast<unsigned>(frame_index), m_debug_info.summary.data());
+    m_debug_info.summary = prefixed;
+}
+
 void Engine::update(std::uint32_t now_ms, bool allowed, const Input &input) {
     if (!busy()) {
         return;
@@ -143,6 +162,7 @@ void Engine::update(std::uint32_t now_ms, bool allowed, const Input &input) {
         }
         m_hardware.reset();
         if (!m_hardware.read_feedback(m_origin)) {
+            capture_sensor_debug("COUNTDOWN", 0);
             fail("IMU / ENCODER NOT READY");
             return;
         }
@@ -198,6 +218,7 @@ void Engine::update(std::uint32_t now_ms, bool allowed, const Input &input) {
     const auto index = m_frame_count;
     Feedback feedback{};
     if (!m_hardware.read_feedback(feedback)) {
+        capture_sensor_debug(m_state == State::Recording ? "RECORD" : "REPLAY", index);
         fail("IMU / ENCODER READ FAILED");
         return;
     }
@@ -238,6 +259,7 @@ void Engine::cancel() {
     m_last_frame_ms = 0;
     m_hardware.reset();
     reset_pid();
+    m_debug_info = {};
     m_state = State::Cancelled;
     m_status = "STOPPED";
 }
@@ -279,6 +301,10 @@ std::uint32_t Engine::elapsed_ms(std::uint32_t now_ms) const {
 
 const char *Engine::status() const {
     return m_status;
+}
+
+const DebugInfo &Engine::debug_info() const {
+    return m_debug_info;
 }
 
 } // namespace macrorec

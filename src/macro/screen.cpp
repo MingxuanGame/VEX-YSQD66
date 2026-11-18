@@ -10,6 +10,7 @@ namespace {
 
 constexpr std::uint32_t kBackground = 0x101820;
 constexpr std::uint32_t kText = 0xFFFFFF;
+constexpr std::uint32_t kDebugText = 0xFFD166;
 constexpr std::uint32_t kButton = 0x236A93;
 constexpr std::uint32_t kStop = 0xA53030;
 
@@ -31,6 +32,12 @@ void rectangle(int x0, int y0, int x1, int y1, std::uint32_t color) {
 
 void label(int x, int y, const char *text) {
     pros::screen::print(pros::E_TEXT_SMALL, x, y, "%s", text);
+}
+
+void debug_label(int x, int y, const char *text) {
+    pros::screen::set_pen(kDebugText);
+    pros::screen::print(pros::E_TEXT_SMALL, x, y, "%.57s", text);
+    pros::screen::set_pen(kText);
 }
 
 void button(int x0, int y0, int x1, int y1, const char *text, bool stop = false) {
@@ -114,8 +121,8 @@ Touch poll_touch(View view, const std::vector<int> &ids, std::size_t page, bool 
 }
 
 void draw_screen(View view, const std::vector<int> &ids, std::size_t page, const Engine &engine,
-                 std::uint32_t now_ms, int selected_id, const char *message, bool retry_save,
-                 bool force) {
+                 std::uint32_t now_ms, int selected_id, const char *message,
+                 const DebugInfo &debug_info, bool retry_save, bool force) {
     const bool full = force || _g_first_draw || view != _g_previous_view;
     if (!full && (view != View::Running || now_ms - _g_draw_ms < 100)) {
         return;
@@ -130,12 +137,18 @@ void draw_screen(View view, const std::vector<int> &ids, std::size_t page, const
         pros::screen::print(pros::E_TEXT_SMALL, 12, 43, "%.57s", message);
     }
     if (view == View::Home) {
+        if (debug_info.active) {
+            debug_label(12, 65, debug_info.summary.data());
+        }
         rectangle(12, 90, 467, 145, kButton);
         chinese_label(40, 106, kNewLabel.data(), 5);
         label(210, 112, "NEW RECORDING");
         rectangle(12, 157, 467, 212, kButton);
         chinese_label(40, 173, kUseLabel.data(), 3);
         label(210, 179, "USE MACRO");
+        if (debug_info.active) {
+            debug_label(12, 220, debug_info.encoders_all.data());
+        }
         return;
     }
     if (view == View::List || view == View::Checkpoints) {
@@ -187,6 +200,11 @@ void draw_screen(View view, const std::vector<int> &ids, std::size_t page, const
         label(12, 78, "OUTPUT STOPPED");
         if (retry_save) {
             button(12, 115, 467, 160, "RETRY SD SAVE");
+        } else if (debug_info.active) {
+            debug_label(12, 100, debug_info.summary.data());
+            debug_label(12, 120, debug_info.imu.data());
+            debug_label(12, 140, debug_info.encoders_l.data());
+            debug_label(12, 160, debug_info.encoders_r.data());
         }
         button(12, 185, 467, 235, retry_save ? "DISCARD / HOME" : "HOME");
     }

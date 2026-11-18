@@ -47,6 +47,16 @@ struct Frame {
     bool checkpoint = false;
 };
 
+// 传感器失败时的多行屏幕调试文本（单行按 57 字符以内格式化）。
+struct DebugInfo {
+    bool active = false;
+    std::array<char, 64> summary{};
+    std::array<char, 64> imu{};
+    std::array<char, 64> encoders_l{};
+    std::array<char, 64> encoders_r{};
+    std::array<char, 64> encoders_all{};
+};
+
 using Clip = std::array<Frame, kFrameCount>;
 
 // Arcade 混控映射并等比限幅；断联时输出零。
@@ -64,6 +74,8 @@ public:
     virtual void reset() = 0;
     // 非阻塞读取原始反馈（度）；校准未完成或读取失败返回 false，不允许驱动宏。
     virtual bool read_feedback(Feedback &feedback) = 0;
+    // 读取最近一次传感器失败诊断信息；无诊断数据时返回 false。
+    virtual bool read_debug_info(DebugInfo &info) const;
 };
 
 enum class State {
@@ -98,10 +110,12 @@ public:
     const Clip &clip() const;
     std::uint32_t elapsed_ms(std::uint32_t now_ms) const;
     const char *status() const;
+    const DebugInfo &debug_info() const;
 
 private:
     bool start(std::uint32_t now_ms, bool recording);
     void fail(const char *reason);
+    void capture_sensor_debug(const char *phase, std::size_t frame_index);
     void reset_pid();
     bool apply_replay(const Frame &frame, const Feedback &feedback);
 
@@ -111,6 +125,7 @@ private:
     math::Pid m_right_pid;
     math::Pid m_heading_pid;
     Clip m_clip{};
+    DebugInfo m_debug_info{};
     State m_state = State::Idle;
     bool m_recording = false;
     bool m_resuming = false;

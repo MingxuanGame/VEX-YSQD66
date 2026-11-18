@@ -9,11 +9,63 @@
 
 #include <array>
 #include <cerrno>
+#include <cmath>
 #include <cstdio>
 #include <vector>
 
 namespace macrorec {
 namespace {
+
+const char *errno_name(int err) {
+    switch (err) {
+    case 0:
+        return "OK";
+    case ENXIO:
+        return "ENXIO";
+    case ENODEV:
+        return "ENODEV";
+    case EAGAIN:
+        return "EAGAIN";
+    case EACCES:
+        return "EACCES";
+    case EDOM:
+        return "EDOM";
+    case EOVERFLOW:
+        return "EOVERFLOW";
+    default:
+        return "ERR";
+    }
+}
+
+const char *imu_status_name(int status) {
+    if (status == 0) {
+        return "RDY";
+    }
+    if (status == 19) {
+        return "CAL";
+    }
+    if (status == 0xFF) {
+        return "ERR";
+    }
+    return "UNK";
+}
+
+void format_sensor_value(double value, int err, char *buf, std::size_t size, bool compact) {
+    if (std::isfinite(value)) {
+        std::snprintf(buf, size, compact ? "%.0f" : "%.1fdeg", value);
+        return;
+    }
+    const char *kind = std::isnan(value) ? "NAN" : "ERR";
+    if (err != 0) {
+        if (compact) {
+            std::snprintf(buf, size, "E%d", err);
+        } else {
+            std::snprintf(buf, size, "%s(%d:%s)", kind, err, errno_name(err));
+        }
+    } else {
+        std::snprintf(buf, size, "%s", kind);
+    }
+}
 
 class Components final : public Hardware {
 public:
@@ -21,6 +73,7 @@ public:
     void stop() override;
     void reset() override;
     bool read_feedback(Feedback &feedback) override;
+    bool read_debug_info(DebugInfo &info) const override;
 };
 
 void Components::apply(const Command &command) {
@@ -39,9 +92,61 @@ bool Components::read_feedback(Feedback &feedback) {
     return chassis::read_feedback(feedback.motor_position_deg, feedback.imu_rotation_deg);
 }
 
+bool Components::read_debug_info(DebugInfo &info) const {
+    const auto &diag = chassis::sensor_diagnostics();
+    if (!diag.has_error) {
+        return false;
+    }
+    info = {};
+    info.active = true;
+    const int cal = diag.imu_calibrated ? 1 : 0;
+    const char *st_name = imu_status_name(diag.imu_status);
+    if (diag.calib_ms > 0) {
+        std::snprintf(info.summary.data(), info.summary.size(), "%s cal=%d st=%s(%d) t=%ums",
+                      diag.stage, cal, st_name, diag.imu_status,
+                      static_cast<unsigned>(diag.calib_ms));
+    } else if (diag.imu_errno != 0) {
+        std::snprintf(info.summary.data(), info.summary.size(), "%s cal=%d st=%s(%d) e=%d(%s)",
+                      diag.stage, cal, st_name, diag.imu_status, diag.imu_errno,
+                      errno_name(diag.imu_errno));
+    } else {
+        std::snprintf(info.summary.data(), info.summary.size(), "%s cal=%d st=%s(%d) tL=%d tR=%d",
+                      diag.stage, cal, st_name, diag.imu_status, diag.left_tare_errno,
+                      diag.right_tare_errno);
+    }
+
+    std::array<char, 24> rot_buf{};
+    format_sensor_value(diag.imu_rotation_deg, diag.imu_errno, rot_buf.data(), rot_buf.size(),
+                        false);
+    std::snprintf(info.imu.data(), info.imu.size(), "IMU P5: rot=%.20s st=%s(%d) rst=%s",
+                  rot_buf.data(), st_name, diag.imu_status, diag.imu_reset_ret == 1 ? "OK" : "ERR");
+
+    std::array<std::array<char, 24>, 4> enc_buf{};
+    std::array<std::array<char, 10>, 4> enc_short{};
+    for (std::size_t i = 0; i < 4; ++i) {
+        format_sensor_value(diag.motor_position_deg[i], diag.motor_errno[i], enc_buf[i].data(),
+                            enc_buf[i].size(), false);
+        format_sensor_value(diag.motor_position_deg[i], diag.motor_errno[i], enc_short[i].data(),
+                            enc_short[i].size(), true);
+    }
+    std::snprintf(info.encoders_l.data(), info.encoders_l.size(), "ENC L: P2=%.20s P1=%.20s",
+                  enc_buf[0].data(), enc_buf[1].data());
+    std::snprintf(info.encoders_r.data(), info.encoders_r.size(), "ENC R: P3=%.20s P4=%.20s",
+                  enc_buf[2].data(), enc_buf[3].data());
+
+    std::array<char, 10> rot_short{};
+    format_sensor_value(diag.imu_rotation_deg, diag.imu_errno, rot_short.data(), rot_short.size(),
+                        true);
+    std::snprintf(info.encoders_all.data(), info.encoders_all.size(),
+                  "P5:%.8s P2:%.8s P1:%.8s P3:%.8s P4:%.8s", rot_short.data(), enc_short[0].data(),
+                  enc_short[1].data(), enc_short[2].data(), enc_short[3].data());
+    return true;
+}
+
 Components _g_components;
 Engine _g_engine(_g_components);
 Clip _g_loaded{};
+DebugInfo _g_debug_info{};
 View _g_view = View::Home;
 std::vector<int> _g_ids;
 std::vector<int> _g_visible_ids;
@@ -56,6 +161,7 @@ std::array<char, 96> _g_message{"20ms | 14.5s record + 0.5s reset"};
 std::array<char, 16384> _g_listing{};
 
 void message(const char *text) {
+    _g_debug_info = {};
     std::snprintf(_g_message.data(), _g_message.size(), "%s", text);
     _g_redraw = true;
 }
@@ -118,7 +224,7 @@ const std::vector<int> &list_items() {
 
 void render() {
     draw_screen(_g_view, list_items(), _g_page, _g_engine, pros::millis(), _g_selected_id,
-                _g_message.data(), _g_retry_save, _g_redraw);
+                _g_message.data(), _g_debug_info, _g_retry_save, _g_redraw);
     _g_redraw = false;
 }
 
@@ -280,6 +386,9 @@ void tick(bool driver) {
             }
         } else if (_g_engine.state() == State::Fault) {
             result(_g_engine.status());
+            if (_g_engine.debug_info().active) {
+                _g_debug_info = _g_engine.debug_info();
+            }
         }
     } else if (driver && _g_view == View::Home && !pros::competition::is_disabled() &&
                !pros::competition::is_autonomous()) {
@@ -306,6 +415,7 @@ void initialize() {
     Feedback feedback{};
     if (!_g_components.read_feedback(feedback)) {
         message("IMU / ENCODER NOT READY: CHECK DEVICES, RESTART");
+        _g_components.read_debug_info(_g_debug_info);
     }
     render();
 }

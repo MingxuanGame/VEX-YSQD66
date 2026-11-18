@@ -37,7 +37,7 @@ Touch poll_touch(View view, const std::vector<int> &ids, std::size_t page, bool 
 
 // 按需刷新当前视图；Running 页每 100ms 刷新计时与进度。
 void draw_screen(View view, const std::vector<int> &ids, std::size_t page, const Engine &engine,
-                 std::uint32_t now_ms, int selected_id, const char *message, bool retry_save,
-                 bool force = false);
+                 std::uint32_t now_ms, int selected_id, const char *message,
+                 const DebugInfo &debug_info, bool retry_save, bool force = false);
 
 } // namespace macrorec
