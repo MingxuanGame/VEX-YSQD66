@@ -8,8 +8,8 @@
 namespace claw {
 namespace {
 
-// TODO: 按实际接线修改端口和方向。
-constexpr int kClawPort = 6;
+// TODO: 占位端口，按实际接线修改。
+constexpr int kClawPort = 8;
 constexpr int kOpenPower = 80;
 constexpr int kClosePower = -80;
 

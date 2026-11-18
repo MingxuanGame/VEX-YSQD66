@@ -1,6 +1,6 @@
 # VEX-yuanshen
 
-基于 PROS V5（kernel 4.2.3）的 VEX V5 机器人 C/C++ 工程。当前实车实现四电机 Arcade 底盘驾驶与 Brain 触屏宏录制/回放；`autonomous()` 留空。抬升和夹爪提供独立的开环控制模块，尚未接入主循环。
+基于 PROS V5（kernel 4.2.3）的 VEX V5 机器人 C/C++ 工程。当前实车实现四电机 Arcade 底盘驾驶与 Brain 触屏宏录制/回放；`autonomous()` 留空。抬升和夹爪的接入手动代码已用 `#if 0` 注释，暂不生效。
 
 ## 功能概览
 
