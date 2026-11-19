@@ -6,12 +6,13 @@
 
 namespace macrorec {
 
-enum class View { Home, List, Checkpoints, Running, Result };
+enum class View { Home, List, Checkpoints, Running, Result, Calibration };
 
 enum class TouchAction {
     None,
     NewRecording,
     OpenList,
+    OpenCalibration,
     Select,
     Resume,
     Previous,

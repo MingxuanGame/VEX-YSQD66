@@ -8,6 +8,7 @@
 - **Brain 触屏宏录放**：脱离场控且启用手动模式时，支持 3 秒倒计时、20ms 一帧共 725 帧（14.5 秒）录制、末尾 0.5 秒停车重置及 SD 卡保存（`/usd/macro_NNNNNN.csv`）。
 - **检查点续录**：录制中按 L1 添加检查点；加载已有宏后可从任意检查点回放前缀、停车 3 秒再续录剩余帧并另存新编号。
 - **反馈纠偏**：每帧记录端口 5 的 IMU 连续转角与四电机编码器角度，回放通过编码器与 IMU 的 PID 叠加修正功率；增益使用 `constexpr` 定义，初值待实机标定。上电停车校准 IMU（3 秒超时），状态重置时清零转角参考。
+- **Brain 测量工具**：从主屏幕进入，按屏幕步骤试跑或填写外部实测值，结果显示对应的网页标定字段和单位。
 - **显示独占**：`Makefile` 将 `liblvgl.a` 排除出冷包，由 `pros::screen` 独占绘制按钮与计时页面，防止 LVGL 后台任务覆盖界面。
 
 > 详细协议、CSV 格式与实机待验证清单见 [宏录制协议](docs/macro-protocol.md)；抬升与夹爪的精简开环标准见 [机构模块](docs/mechanisms.md)；赛制与编程规范见 [AGENTS.md](AGENTS.md) 与 [规则索引](docs/rules/README.md)。
@@ -16,6 +17,7 @@
 
 ```text
 include/
+  calibration/           测量项目、试跑、键盘和会话接口
   chassis.h              底盘控制接口
   lift.hpp               抬升开环接口
   claw.hpp               夹爪开环接口
@@ -31,6 +33,7 @@ include/
 src/
   main.cpp               PROS 五个竞赛回调与主循环调度
   autonomous/            自动赛路线模板、曲线跟踪、里程计与动作执行
+  calibration/           标定试跑、数据换算与 Brain 界面
   chassis.cpp            四电机端口 (2,1 / -3,-4)、蓝齿轮、偏置补偿与端口 5 的 IMU
   lift.cpp               抬升开环电机
   claw.cpp               夹爪开环电机
@@ -42,6 +45,23 @@ src/
 ## 编辑自动路线
 
 在网页编辑和校验路线，点击「导出 C++」。将导出的完整 `program.cpp` 放到车辆工程的 `src/autonomous/program.cpp`，再运行 `pros build`。[Override Auto Studio](https://override-auto-studio.vercel.app/)
+
+## Brain 测量工具
+
+在 Brain 主屏幕点击「测量工具」，选择项目并按屏幕说明操作。带动力的试跑需要脱离场控并启用手动。按住手柄 A 两秒开始，持续按到试跑结束。松开 A、点击停止、手柄掉线或模式切换都会中止试跑并刹车。
+
+建议先测每转行程和静摩擦，再测匀速、加速与 PID。测得的每转行程、kS、kV、巡航速度和停车容差会在本次开机期间预填到相关项目。每转行程用尺量地面距离，停车位置误差用尺或俯拍测量。横向偏差、滑行量和最小弯道均使用外部实测值。
+
+| Brain 项目 | 结果字段 | 网页「PID / 标定」位置 |
+| --- | --- | --- |
+| Travel per rev | `travel_per_rev` | 每电机轴转行程 |
+| Static power kS | `static_power` | 静摩擦 kS |
+| Cruise kV / trim | `velocity_gain`、`left_trim`、`cruise_speed` | 速度增益 kV、左右动力微调、巡航速度 |
+| Acceleration kA | `acceleration_gain`、`acceleration` | 加速度增益 kA、加速 |
+| Heading PID / Speed PID | `heading_p/i/d`、`speed_p/i/d` | 航向 PID、速度 PID，填入起调值后复跑 |
+| Stop tolerances | `position_tolerance`、`heading_tolerance` | 停车容差、航向容差 |
+| Tracking / gap | `tracking_limit`、`clearance` | 偏差急停、几何余量 |
+| Lookahead / Min turn radius | `lookahead`、`min_radius` | 跟踪前视、最小转弯半径 |
 
 ## 环境配置与构建
 

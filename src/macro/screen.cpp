@@ -13,6 +13,10 @@ constexpr std::uint32_t kText = 0xFFFFFF;
 constexpr std::uint32_t kDebugText = 0xFFD166;
 constexpr std::uint32_t kButton = 0x236A93;
 constexpr std::uint32_t kStop = 0xA53030;
+constexpr std::array<int, 3> kHomeRows{90, 132, 174};
+constexpr int kHomeButtonHeight = 36;
+constexpr std::array<TouchAction, 3> kHomeActions{TouchAction::NewRecording, TouchAction::OpenList,
+                                                  TouchAction::OpenCalibration};
 
 int _g_press_count = 0;
 bool _g_first_draw = true;
@@ -85,11 +89,11 @@ Touch poll_touch(View view, const std::vector<int> &ids, std::size_t page, bool 
         return {};
     }
     if (view == View::Home) {
-        if (y >= 90 && y <= 145) {
-            return {TouchAction::NewRecording};
-        }
-        if (y >= 157 && y <= 212) {
-            return {TouchAction::OpenList};
+        for (std::size_t row = 0; row < kHomeRows.size(); ++row) {
+            const int top = kHomeRows[row];
+            if (y >= top && y <= top + kHomeButtonHeight) {
+                return {kHomeActions[row]};
+            }
         }
     } else if (view == View::List || view == View::Checkpoints) {
         if (y >= 69 && y < 193) {
@@ -140,12 +144,17 @@ void draw_screen(View view, const std::vector<int> &ids, std::size_t page, const
         if (debug_info.active) {
             debug_label(12, 65, debug_info.summary.data());
         }
-        rectangle(12, 90, 467, 145, kButton);
-        chinese_label(40, 106, kNewLabel.data(), 5);
-        label(210, 112, "NEW RECORDING");
-        rectangle(12, 157, 467, 212, kButton);
-        chinese_label(40, 173, kUseLabel.data(), 3);
-        label(210, 179, "USE MACRO");
+        constexpr std::array<const char *, 3> kHomeLabels{"NEW RECORDING", "USE MACRO",
+                                                          "CALIBRATION"};
+        for (std::size_t row = 0; row < kHomeRows.size(); ++row) {
+            const int top = kHomeRows[row];
+            rectangle(12, top, 467, top + kHomeButtonHeight, kButton);
+            label(210, top + 11, kHomeLabels[row]);
+        }
+        chinese_label(40, kHomeRows[0] + 6, kNewLabel.data(), kNewLabel.size() / 24);
+        chinese_label(40, kHomeRows[1] + 6, kUseLabel.data(), kUseLabel.size() / 24);
+        chinese_label(40, kHomeRows[2] + 6, kCalibrationLabel.data(),
+                      kCalibrationLabel.size() / 24);
         if (debug_info.active) {
             debug_label(12, 220, debug_info.encoders_all.data());
         }

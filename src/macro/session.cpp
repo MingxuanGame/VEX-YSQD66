@@ -1,4 +1,5 @@
 #include "macro/session.hpp"
+#include "calibration/session.hpp"
 #include "chassis.h"
 #include "io/pros_controller.hpp"
 #include "macro/engine.hpp"
@@ -145,6 +146,7 @@ bool Components::read_debug_info(DebugInfo &info) const {
 
 Components _g_components;
 Engine _g_engine(_g_components);
+calibration::Session _g_calibration(_g_components);
 Clip _g_loaded{};
 DebugInfo _g_debug_info{};
 View _g_view = View::Home;
@@ -294,6 +296,11 @@ void handle_touch(bool driver) {
                                            : "SELECT MACRO, THEN CHECKPOINT OR END");
         }
         return;
+    case TouchAction::OpenCalibration:
+        _g_engine.cancel();
+        _g_calibration.open();
+        _g_view = View::Calibration;
+        return;
     case TouchAction::Select: {
         if (!driver || !practice_allowed()) {
             result("REPLAY: UNPLUG FIELD, ENABLE DRIVER");
@@ -372,7 +379,25 @@ void tick(bool driver) {
     const bool service_ui = now_ms - _g_service_ms >= kPeriodMs;
     if (service_ui) {
         _g_service_ms = now_ms;
-        handle_touch(driver);
+        if (_g_view != View::Calibration) {
+            handle_touch(driver);
+        }
+    }
+    if (_g_view == View::Calibration) {
+        if (service_ui) {
+            const bool allowed = driver && practice_allowed();
+            auto &controller = io::prosController();
+            const bool connected = allowed && controller.isConnected();
+            _g_calibration.tick(now_ms, allowed, connected,
+                                connected && controller.digital(io::Digital::A));
+            if (!_g_calibration.active()) {
+                _g_view = View::Home;
+                _g_redraw = true;
+                reset_touch();
+                render();
+            }
+        }
+        return;
     }
     if (_g_engine.busy()) {
         const Input input = _g_engine.recording() ? read_input() : Input{};
@@ -429,6 +454,7 @@ void stop() {
         _g_pending_save = true;
     }
     _g_engine.cancel();
+    _g_calibration.interrupt();
     if (was_busy) {
         result("MODE CHANGED - OUTPUT ZERO");
     }
