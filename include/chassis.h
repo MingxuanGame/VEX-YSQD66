@@ -37,6 +37,9 @@ const SensorDiagnostics &sensor_diagnostics();
 // 应用左右侧开环功率 [-127, 127]，按补偿偏移限幅；禁用或自动阶段下保持停止。
 void set_power(int left_power, int right_power);
 
+// 自动专用开环功率 [-127, 127]，只在场控启用的自动时段输出。
+void set_autonomous_power(int left_power, int right_power);
+
 // 立即刹车停止四个驱动电机。
 void stop();
 

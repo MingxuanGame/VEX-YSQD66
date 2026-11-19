@@ -125,6 +125,13 @@ void capture_failure_details(pros::ImuStatus status) {
     }
 }
 
+void apply_power(int left_power, int right_power) {
+    const int adjusted_left = apply_offset(left_power, std::max(0, -kRightMotorOffsetToLeft));
+    const int adjusted_right = apply_offset(right_power, std::max(0, kRightMotorOffsetToLeft));
+    _g_left.move(adjusted_left);
+    _g_right.move(adjusted_right);
+}
+
 } // namespace
 
 void initialize() {
@@ -232,10 +239,15 @@ void set_power(int left_power, int right_power) {
         stop();
         return;
     }
-    const int adjusted_left = apply_offset(left_power, std::max(0, -kRightMotorOffsetToLeft));
-    const int adjusted_right = apply_offset(right_power, std::max(0, kRightMotorOffsetToLeft));
-    _g_left.move(adjusted_left);
-    _g_right.move(adjusted_right);
+    apply_power(left_power, right_power);
+}
+
+void set_autonomous_power(int left_power, int right_power) {
+    if (pros::competition::is_disabled() || !pros::competition::is_autonomous()) {
+        stop();
+        return;
+    }
+    apply_power(left_power, right_power);
 }
 
 } // namespace chassis
