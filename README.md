@@ -6,8 +6,8 @@
 
 - **LemLib 底盘与定位**：沿用四电机双侧直轮底盘（左前 2、左后 1，右前 3、右后 4 反转，蓝齿轮 600 rpm）及端口 5 的 IMU；不外接从动定位轮，由 `lemlib::Chassis` 自动通过左右驱动电机组编码器与 IMU 进行里程计解算与闭环运动控制。
 - **手动驾驶**：在 `opcontrol()` 中以 20ms 周期通过 `io::Controller` 读取手柄，左摇杆前后与右摇杆转向经 `lemlib::ExpoDriveCurve` 指数曲线和 `lemlib::Chassis::arcade()` 混控驱动底盘；按住 **X** 上升、**B** 下降控制升降，按住 **R1** 张开、**R2** 闭合控制夹爪。
-- **升降与软件限位**：9、10 号口使用绿色齿轮电机（200 rpm）。Brain 屏幕只保留升降限位测量界面（`[SET LOW]` / `[SET UP]` / `[USE SAVED]`），将限位行程保存到 SD 卡（`/usd/lift_limits.csv`）；每次上电将升降置于原下端后点击 `[USE SAVED]` 恢复参考；自动赛额外提供基于 `lemlib::PID`、`lemlib::Timer` 和 `lemlib::ExitCondition` 的 `lifting::move_to()` 与 `lifting::move_for()` 辅助接口。
-- **自动赛入口**：`src/autons.cpp` 仅保留唯一公开函数 `autons::run()`，由 `autonomous()` 调用；可在其中通过 LemLib Path Planner 与 `C++ Custom` 组装自动路线，默认保持停车。
+- **Brain 触屏界面**：基于 LVGL 绘制单屏界面，上半区直观选择 4 个自动赛预设（`RED LEFT` / `RED DOWN` / `BLUE RIGHT` / `BLUE UP`），下半区保留升降限位测量（`NOW` / `LOW` / `UP` 读数与 `[SET LOW]` / `[SET UP]` / `[USE SAVED]` 按钮）。
+- **自动赛入口**：`src/autons.cpp` 仅保留唯一公开函数 `autons::run()`，由 `autonomous()` 调用；内部预留 `run_red_left()`、`run_red_down()`、`run_blue_right()`、`run_blue_up()`，按屏幕所选预设调度对应代码，可在其中使用 LemLib Path Planner 与 `C++ Custom` 组装路线。
 
 > 机构接线与标定步骤见 [机构模块](docs/mechanisms.md)。赛制与编程规范见 [AGENTS.md](AGENTS.md) 与 [规则索引](docs/rules/README.md)。
 
@@ -16,7 +16,7 @@
 ```text
 include/
   autons.hpp             自动赛唯一公开函数 autons::run() 声明
-  brain_ui.hpp           Brain LLEMU 升降限位测量界面
+  brain_ui.hpp           Brain 触屏自动预设选择与升降限位测量界面
   chassis.h              基于 LemLib 的四电机底盘与里程计控制接口
   claw.hpp               夹爪开环接口（手动与自动）
   io/
@@ -25,8 +25,8 @@ include/
   lifting.hpp            双电机升降、软件限位与 LemLib 辅助闭环接口
 src/
   main.cpp               PROS 五个竞赛回调与 20ms 主循环调度
-  autons.cpp             自动赛唯一公开函数 autons::run() 实现
-  brain_ui.cpp           Brain LLEMU 升降限位显示与点动标定逻辑
+  autons.cpp             autons::run() 与预留 run_red_left/red_down/blue_right/blue_up
+  brain_ui.cpp           LVGL 触屏预设按钮与升降限位显示、点动标定逻辑
   chassis.cpp            四电机端口 (2,1 / -3,-4)、端口 5 IMU 与 LemLib 底盘参数配置
   claw.cpp               夹爪开环电机（端口 8 占位）
   io/pros_controller.cpp ProsController 继承实现
