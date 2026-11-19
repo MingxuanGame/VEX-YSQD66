@@ -1,7 +1,13 @@
 #include "macro/session.hpp"
 #include "calibration/session.hpp"
 #include "chassis.h"
+#if 0 // 机构手动控制：暂时关闭
+#include "claw.hpp"
+#endif
 #include "io/pros_controller.hpp"
+#if 0 // 机构手动控制：暂时关闭
+#include "lift.hpp"
+#endif
 #include "macro/engine.hpp"
 #include "macro/screen.hpp"
 #include "macro/storage.hpp"
@@ -16,6 +22,20 @@
 
 namespace macrorec {
 namespace {
+
+#if 0 // 机构手动控制：暂时关闭，确认端口/按键后启用
+// ===== 机构手动控制：新增代码，按键暂为占位 =====
+// TODO: 按键布局确认后只改这里。
+constexpr std::uint16_t kLiftToggleButton = 1U << 10; // 占位：R1
+constexpr std::uint16_t kClawOpenButton = 1U << 9;    // 占位：L2
+constexpr std::uint16_t kClawCloseButton = 1U << 11;  // 占位：R2
+
+void stop_mechanisms() {
+    lift::stop();
+    claw::stop();
+}
+// ===== 机构手动控制结束 =====
+#endif
 
 const char *errno_name(int err) {
     switch (err) {
@@ -265,6 +285,11 @@ void handle_touch(bool driver) {
     }
     // 切换菜单或访问 SD 前立即停止电机输出。
     _g_components.stop();
+#if 0 // 机构手动控制：暂时关闭
+    // ===== 机构手动控制：菜单切换时停止机构 =====
+    stop_mechanisms();
+    // ===== 机构手动控制结束 =====
+#endif
     switch (touch.action) {
     case TouchAction::NewRecording:
         if (!driver || !practice_allowed()) {
@@ -400,6 +425,11 @@ void tick(bool driver) {
         return;
     }
     if (_g_engine.busy()) {
+#if 0   // 机构手动控制：暂时关闭
+        // ===== 机构手动控制：宏运行期间机构保持停止 =====
+        stop_mechanisms();
+        // ===== 机构手动控制结束 =====
+#endif
         const Input input = _g_engine.recording() ? read_input() : Input{};
         _g_engine.update(pros::millis(), driver && practice_allowed(), input);
         if (_g_engine.state() == State::Complete) {
@@ -420,11 +450,33 @@ void tick(bool driver) {
         const auto input = read_input();
         if (input.connected) {
             _g_components.apply(map_input(input));
+#if 0       // 机构手动控制：暂时关闭
+            // ===== 机构手动控制：新增代码，按键为占位 =====
+            lift::update((input.buttons & kLiftToggleButton) != 0);
+            if ((input.buttons & kClawOpenButton) != 0) {
+                claw::open();
+            } else if ((input.buttons & kClawCloseButton) != 0) {
+                claw::close();
+            } else {
+                claw::stop();
+            }
+            // ===== 机构手动控制结束 =====
+#endif
         } else {
             _g_components.stop();
+#if 0       // 机构手动控制：暂时关闭
+            // ===== 机构手动控制：手柄断开时停止机构 =====
+            stop_mechanisms();
+            // ===== 机构手动控制结束 =====
+#endif
         }
     } else {
         _g_components.stop();
+#if 0   // 机构手动控制：暂时关闭
+        // ===== 机构手动控制：离开 Home/宏时停止机构 =====
+        stop_mechanisms();
+        // ===== 机构手动控制结束 =====
+#endif
     }
     if (service_ui) {
         render();
@@ -435,6 +487,12 @@ void tick(bool driver) {
 
 void initialize() {
     chassis::initialize();
+#if 0 // 机构手动控制：暂时关闭
+    // ===== 机构手动控制：初始化机构 =====
+    lift::initialize();
+    claw::initialize();
+    // ===== 机构手动控制结束 =====
+#endif
     _g_engine.cancel();
     initialize_screen();
     Feedback feedback{};
@@ -455,6 +513,11 @@ void stop() {
     }
     _g_engine.cancel();
     _g_calibration.interrupt();
+#if 0 // 机构手动控制：暂时关闭
+    // ===== 机构手动控制：模式切换时停止机构 =====
+    stop_mechanisms();
+    // ===== 机构手动控制结束 =====
+#endif
     if (was_busy) {
         result("MODE CHANGED - OUTPUT ZERO");
     }

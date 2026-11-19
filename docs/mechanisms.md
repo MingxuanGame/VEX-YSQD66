@@ -4,7 +4,7 @@
 
 `lift` 和 `claw` 是当前机构的**最小可用开环控制模块**，按文档中“精简、能用、开环”的标准实现，不再使用GPT生成Slop，不按比赛级闭环机构框架扩展。
 
-它们目前不接入 `main.cpp`，因此不会自动响应手柄；接入时由主循环或后续宏协议调用。
+它们的手动接入代码已写入 `macrorec` 会话，但当前用 `#if 0` 注释关闭，暂不响应手柄；宏录制/回放仍只记录底盘。
 
 ---
 
@@ -52,29 +52,44 @@ src/claw.cpp
 ```cpp
 namespace lift {
 void initialize();
+void toggle();
+void update(bool pressed);
 void set_power(int power);
 void stop();
 }
 ```
 
+行为：
+
+```text
+第一次 toggle -> 上升
+第二次 toggle -> 下降
+第三次 toggle -> 上升
+stop          -> 刹车并回到空闲
+update(pressed) 只在按下的上升沿触发 toggle
+```
+
 当前参数：
 
 ```text
-端口：5（占位）
+端口：7（占位）
 齿轮箱：blue（占位）
-功率：-127..127
+上升功率：+80
+下降功率：-80
 停止：brake
 ```
 
-建议手动控制：
+> IMU 固定使用端口 5，抬升不得再占用端口 5。当前 7 只是占位，接线确认后必须修改。
+
+手动接入代码：
 
 ```text
-R1 按住 -> 抬升
-R2 按住 -> 下降
-松开   -> stop
+占位按键：R1（bit 10）-> toggle
+主循环调用 update(controller.digital(R1))
 ```
 
-但这组按键**当前没有写进 main**。
+代码当前位于 `src/macro/session.cpp` 的 `#if 0` 块内，确认端口和按键后再启用。  
+宏运行期间机构保持停止，不记录、不回放。
 
 ---
 
@@ -95,7 +110,7 @@ void stop();
 当前参数：
 
 ```text
-端口：6（占位）
+端口：8（占位）
 齿轮箱：blue（占位）
 张开：+80
 闭合：-80
@@ -112,15 +127,16 @@ void stop();
 无位置传感器
 ```
 
-建议手动控制：
+手动接入代码：
 
 ```text
-R1 按住 -> open
-R2 按住 -> close
-松开   -> stop
+占位按键：L2（bit 9）-> open
+占位按键：R2（bit 11）-> close
+松开 -> stop
 ```
 
-同样，这组按键**当前没有写进 main**。
+代码当前位于 `src/macro/session.cpp` 的 `#if 0` 块内，确认端口和按键后再启用。  
+宏运行期间机构保持停止，不记录、不回放。
 
 ---
 
