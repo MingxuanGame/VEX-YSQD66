@@ -209,6 +209,10 @@ void run(const Config &config, std::span<const Step> steps) {
     }
     auto planned = config.start;
     for (const Step &step : steps) {
+        const auto group_ms = pros::millis();
+        if (step.start_delay_ms > 0 && !wait(odom, {start_ms, group_ms, step.start_delay_ms})) {
+            break;
+        }
         const Window window{start_ms, pros::millis(), step.limit_ms};
         if (!window.active()) {
             break;
@@ -236,7 +240,7 @@ void run(const Config &config, std::span<const Step> steps) {
         }
         stop();
         if (success && step.minimum_ms > 0) {
-            success = wait(odom, {start_ms, window.step_ms, step.minimum_ms});
+            success = wait(odom, {start_ms, group_ms, step.minimum_ms});
         }
         const auto elapsed_ms = pros::millis() - start_ms;
         std::printf("AUTO %u %s %lu ms\n", step.checkpoint,

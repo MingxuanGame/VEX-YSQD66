@@ -28,8 +28,10 @@ struct Step {
     Point control1{};
     Point control2{};
     Point end{};
-    // 组合中其余动作的计划时长，从同一步开始计时。
+    // 组合中其余动作的最晚结束点，从组开始计时。
     std::uint32_t minimum_ms = 0;
+    // 底盘动作从组开始到启动的间隔。
+    std::uint32_t start_delay_ms = 0;
 };
 
 struct DriveConfig {
