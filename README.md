@@ -1,6 +1,6 @@
 # VEX-yuanshen
 
-基于 PROS V5（kernel 4.2.3）的 VEX V5 机器人 C/C++ 工程。当前实车实现四电机 Arcade 底盘驾驶与 Brain 触屏宏录制/回放；`autonomous()` 留空。抬升和夹爪提供独立的开环控制模块，尚未接入主循环。
+基于 PROS V5（kernel 4.2.3）的 VEX V5 机器人 C/C++ 工程。当前实车实现四电机 Arcade 底盘驾驶与 Brain 触屏宏录制和回放。自动赛默认加载空白路线模板并保持停车。抬升和夹爪提供独立的开环控制模块，尚未接入主循环。
 
 ## 功能概览
 
@@ -30,6 +30,7 @@ include/
     storage.hpp          v4 CSV 读写与目录编号解析（旧版宏需重新录制）
 src/
   main.cpp               PROS 五个竞赛回调与主循环调度
+  autonomous/            自动赛路线模板、曲线跟踪、里程计与动作执行
   chassis.cpp            四电机端口 (2,1 / -3,-4)、蓝齿轮、偏置补偿与端口 5 的 IMU
   lift.cpp               抬升开环电机
   claw.cpp               夹爪开环电机
@@ -37,6 +38,10 @@ src/
   math/pid.cpp           PID 计算与状态重置
   macro/                 engine / screen / session / storage 及中文字形数据
 ```
+
+## 编辑自动路线
+
+在网页编辑和校验路线，点击「导出 C++」。将导出的完整 `program.cpp` 放到车辆工程的 `src/autonomous/program.cpp`，再运行 `pros build`。[Override Auto Studio](https://override-auto-studio.vercel.app/)
 
 ## 环境配置与构建
 
