@@ -324,6 +324,7 @@ const char *auton_name(AutonPreset preset) {
 }
 
 void reset_lift_calibration() {
+    // 已知：只清 UI 标定状态，不清 lifting 内部的 lower_reference/limits。
     _g_lift_jog_armed = false;
     _g_lift_jog_started_ms.reset();
     _g_lift_lower_deg.reset();

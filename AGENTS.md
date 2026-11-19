@@ -12,19 +12,22 @@
 
 ## 2. 工程结构与依赖
 
-当前工程使用 PROS V5 kernel **4.2.3** 和 liblvgl **9.2.0**（Makefile 在冷包中排除了 `liblvgl.a`，由 `pros::screen` 独占绘制宏界面）。
+当前工程使用 PROS V5 kernel **4.2.3**、LemLib **0.5.6** 和 liblvgl **9.2.0**。Makefile 将 LemLib 与 liblvgl 一并放入冷包；`brain_ui` 使用 LVGL 绘制 Brain 界面。
 
 | 路径 | 职责与修改边界 |
 | --- | --- |
-| `src/main.cpp` | 五个竞赛回调与 20ms / 1ms 主循环调度 |
-| `src/chassis.cpp`、`include/chassis.h` | 四电机差速底盘驱动、偏置补偿与编码器清零 |
+| `src/main.cpp` | 五个竞赛回调与 20ms 主循环调度 |
+| `src/chassis.cpp`、`include/chassis.h` | LemLib 四电机差速底盘、IMU 与里程计配置 |
+| `src/lifting.cpp`、`include/lifting.hpp` | P9/P10 双电机升降、软件限位、SD 行程与闭环升降 |
+| `src/claw.cpp`、`include/claw.hpp` | Brain 三线口气动夹爪 |
+| `src/autons.cpp`、`include/autons.hpp` | 自动赛入口与四条预设路线 |
+| `src/brain_ui.cpp`、`include/brain_ui.hpp` | 自动预设选择、升降限位标定界面 |
 | `src/io/`、`include/io/` | `io::Controller` 手柄抽象接口与 `io::ProsController` 真机适配 |
-| `src/macro/`、`include/macro/` | `macrorec::Hardware` 抽象、宏录放状态机 `Engine`、CSV 存储、触屏 UI 与会话调度 |
 | `tools/configure_env.py` | 检测本机 ARM 工具链与 clangd，生成 `compile_commands.json` 与 VS Code 本地配置 |
-| `docs/macro-protocol.md` | Brain 宏录制/回放操作流程与 v4 CSV 文件协议 |
+| `docs/mechanisms.md` | 升降、夹爪、端口、标定与安全说明 |
 | `docs/rules/`、`docs/licenses/` | 2.1 版规则原件/索引与字体许可 |
 | `.vscode/*.example.json`、`toolchain.example.json` | 可提交的共享配置模板 |
-| `include/pros/`、`include/liblvgl/`、`include/api.h`、`firmware/` | SDK 或第三方内容，日常业务开发不修改 |
+| `include/pros/`、`include/liblvgl/`、`include/lemlib/`、`firmware/` | SDK 或第三方内容，日常业务开发不修改 |
 | `Makefile`、`common.mk`、`project.pros` | 构建与依赖信息；普通参数优先在 `Makefile` 用户配置区修改 |
 | `bin/`、`.d/`、`.cache/` | 输出、依赖与缓存，不手改、不提交 |
 
@@ -38,16 +41,29 @@
 
 ### 架构、继承与精简原则
 
-- **保留继承与抽象层次**：业务与状态机只依赖抽象基类接口（如 `io::Controller`、`macrorec::Hardware`），真机实现通过继承在适配层完成（如 `io::ProsController`、`macrorec::Components`），不在业务逻辑中散落 `pros/*` 硬件调用。
+- **保留继承与抽象层次**：业务逻辑只依赖抽象接口（如 `io::Controller`），真机实现通过继承在适配层完成（如 `io::ProsController`），不在业务逻辑中散落 `pros/*` 硬件调用。
 - **拒绝冗余防御式代码**：保持逻辑清晰直白，不堆砌“GPT 风格”的过度防御代码——不在内部可信调用链上重复校验已保证的输入范围、反复清零 `errno`、或构造多余的状态标志与影子时间戳；校验仅保留在硬件/场控边界与外部文件（SD CSV）解析处。
 - **结构清晰易读**：优先用直观的状态机和短小函数表达业务流程，不引入用不到的接口、占位实现或死代码。
+
+### 当前设备映射
+
+| 设备 | 端口/总线 | 备注 |
+| --- | --- | --- |
+| 左驱动电机组（前、后） | -2、-1 | 负端口反转，实机确认方向 |
+| 右驱动电机组（前、后） | 3、4 | 实机确认方向 |
+| IMU | 5 | LemLib 里程计 |
+| 升降电机 9 | 9 | 绿齿轮，正向 |
+| 升降电机 10 | -10 | 绿齿轮，反向 |
+| 气动夹爪 | ADI `E` | 代码实际为 E；README/mechanisms 中 D 口描述待统一 |
+
+端口、方向、齿轮组或偏置变更必须同步更新本表、代码注释和实机标定记录。
 
 ### 排版与头文件
 
 - C/C++ 使用 **4 个空格缩进**，禁止 Tab；左大括号与语句同一行，不同函数之间空一行。
 - 使用仓库 `.clang-format`（100 列限制是本项目补充约定，非培训原文要求）。
 - 每个新增或修改的自有头文件最上方添加 `#pragma once`；保留已有许可证说明，不批量改动 SDK。
-- C++ 标准库使用尖括号，自定义头文件使用双引号。子目录头文件使用相对于 `include/` 的路径，例如 `#include "macro/engine.hpp"`。
+- C++ 标准库使用尖括号，自定义头文件使用双引号。子目录头文件使用相对于 `include/` 的路径，例如 `#include "lemlib/api.hpp"`。
 - 头文件放接口声明，实现放对应 `.cpp`；头文件中的类成员函数也应分离实现（模板、`constexpr` 或必要的 `inline` 例外）。
 - 硬件对象只定义一次，跨文件通过模块接口访问；确需共享时在头文件 `extern` 声明、在一个 `.cpp` 定义。
 - 新模块优先使用 `.hpp`；现有 `.h` 可保留，不为扩展名作无关重命名。
@@ -55,9 +71,9 @@
 ### 命名与作用域
 
 - 禁止 `using namespace ...;`，包括 `pros`、`pros::literals`、`okapi` 和 `std`；调用时显式使用作用域，例如 `pros::delay(20)`。
-- 全局可变对象统一使用 `_g_` 前缀（如 `_g_left`、`macrorec::_g_engine`），放在项目命名空间或匿名命名空间中，优先限制在实现文件内。
+- 全局可变对象统一使用 `_g_` 前缀（如 `_g_left`、`_g_motion_task`），放在项目命名空间或匿名命名空间中，优先限制在实现文件内。
 - 私有、受保护成员变量使用 `m_` 前缀，例如 `m_frame_count`。
-- 常量使用 `k` 加大驼峰，例如 `kPeriodMs`、`kRightMotorOffsetToLeft`，不叠加 `_g_` 或 `m_`。
+- 常量使用 `k` 加大驼峰，例如 `kPeriodMs`、`kLiftPower`，不叠加 `_g_` 或 `m_`。
 - 避免双下划线和下划线加大写字母开头的自定义标识符。
 - 新模块文件、命名空间、函数和普通变量推荐 `snake_case`，类型使用 `PascalCase`；已有 `camelCase` 公共接口（如 `io::Controller`）保留原风格，不作无意义重命名。保留 PROS 要求的回调名称。
 - 带物理量的参数注明单位，如 `_ms`、`_deg`、`_rpm`、`_mv`；区分电压、转速、位置目标。
@@ -75,8 +91,8 @@
 - 新增或修改设备映射时记录端口、设备类型、电机齿轮组、反转方向和编码器单位。
 - `move()` 的控制量范围为 -127 到 127；电压驱动、转速驱动和绝对位置驱动使用各自单位。混控相加后必须限幅或等比归一化，确认正负方向与实际安装一致。
 - 电压驱动是开环；速度和位置接口使用电机内部闭环。等待到位过程需检查反馈和超时。
-- 手动主循环尾部必须保留 `pros::delay(20)` 或等效的 20ms 周期调度；宏运行期间按 1ms 唤醒服务 20ms 帧边界时也必须显式让出 CPU，禁止忙等。
-- IMU 校准、传感器等待、机构归零、PID 到位等待均须有超时退出，错误读数不能直接成为运动目标。
+- 手动主循环尾部必须保留 `pros::delay(20)` 或等效的 20ms 周期调度；异步升降任务也必须让出 CPU，禁止忙等。
+- IMU 校准、传感器等待、机构归零、LemLib PID 到位等待和升降异步任务均须有超时退出，错误读数不能直接成为运动目标。
 - 同一执行器同一时刻只有一个控制任务拥有写权限；模式切换时停止旧输出并清理状态。
 - 新增后台任务必须检查禁用与模式切换，不能假设父回调结束会自动销毁子任务。
 
@@ -89,11 +105,11 @@
 | `initialize()` | 初始化屏幕、设备和软件状态；几秒内完成，禁止死循环；初始化期间不驱动底盘或机构 |
 | `competition_initialize()` | 保持停止状态，可运行赛前选择/菜单服务，不执行比赛动作 |
 | `disabled()` | 停止输出、取消未完成目标并清理状态；禁止通过后台任务继续驱动执行器 |
-| `autonomous()` | 运行自动路线（当前留空），所有步骤有超时、禁用和模式退出路径；结束时安全停车 |
-| `opcontrol()` | 周期读取手柄、调度驾驶与宏功能；进入时清理旧目标与触摸/边沿状态 |
+| `autonomous()` | 运行 `autons::run()` 的选定路线；路线内必须检查禁用/自动模式、超时并在结束时停车 |
+| `opcontrol()` | 周期读取手柄，驱动 LemLib 底盘、升降和气动夹爪；进入时清理旧目标与边沿状态 |
 
 - **禁用状态清零边界**：可重置软件目标与编码器参考；需要电机或气动动作的机械归零不得在禁用状态执行。
-- `<R9>` 要求服从场控启用、禁用和模式指令；本地宏录制/回放仅限脱离场控且处于启用的手动练习，禁止在 `initialize()` 中自动调用。
+- `<R9>` 要求服从场控启用、禁用和模式指令；升降点动/限位标定仅限脱离场控且处于启用的手动练习，禁止在 `initialize()` 中自动执行。
 - 自动计时从每次自动开始重新计算，不能代替场控。
 
 ## 6. Override 2.1 的程序约束
@@ -142,7 +158,8 @@ pros build
 - 修改 C/C++ 后执行 `clang-format -i <修改文件>` 及 `clang-format --dry-run --Werror <修改文件>`。
 - `toolchain.local.json`、`.vscode/settings.json`、`.vscode/c_cpp_properties.json`、`.vscode/tasks.json`、`compile_commands.json` 为本机生成文件，已被 `.gitignore` 忽略，不得提交机器绝对路径。
 - 本机缺工具时如实报告缺失项与未执行验证，不伪造构建或硬件测试结果。
-- 实机验证须覆盖：启用/禁用、自动转手动、摇杆归零与方向、四轮转向与偏置补偿、SD 宏录制/回放/检查点续录、场控接入拒绝宏操作。未接实机时明确列出待验证项。
+- 实机验证须覆盖：启用/禁用、自动转手动、摇杆归零与方向、LemLib 标定与里程计、升降双电机方向与软限位、SD `lift_limits.csv` 存取、夹爪气阀、四条自动预设和场控中断。
+- 当前没有 PC 仿真或自动化测试；`pros build all` 只证明编译通过，不证明实机行为。
 
 ## 8. 修改与交付
 
