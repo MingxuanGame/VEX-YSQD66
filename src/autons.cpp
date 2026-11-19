@@ -9,8 +9,8 @@
 #include "pros/misc.hpp"
 #include "pros/rtos.hpp"
 
-#include <algorithm>
 #include <cstdint>
+#include <optional>
 
 // 在 static/ 放入 JerryIO / LemLib Path Planner 导出的路径文本后取消注释：
 // ASSET(example_txt);
@@ -22,10 +22,10 @@ void run_red_left() {
     // Override 2.1 第 18 页：对抗赛自动时段为 15 秒，预留停车时间。
     constexpr std::uint32_t kRouteBudgetMs = 14500;
     constexpr std::uint32_t kPollMs = 10;
-    // move_to 使用相对角度，0 对应 Brain 菜单实测的 SET LOW。
-    constexpr double kReleaseOffsetDeg = 0.0;
-    // 待实机确认机构动作时间。
-    constexpr std::uint32_t kLiftTimeoutMs = 900;
+    // 等待实车测量各段升降时间。三段均配置后才运行该路线。
+    constexpr std::optional<std::uint32_t> kFirstLowerMs;
+    constexpr std::optional<std::uint32_t> kPickupRaiseMs;
+    constexpr std::optional<std::uint32_t> kFinalLowerMs;
     constexpr std::uint32_t kClawTravelMs = 250;
     constexpr int kLiftMaxPower = 80;
 
@@ -35,13 +35,9 @@ void run_red_left() {
         return !pros::competition::is_disabled() && pros::competition::is_autonomous() &&
                !route_timer.isDone();
     };
-    const auto &limits = lifting::limits();
-    if (!can_run() || !limits) {
+    if (!can_run() || !kFirstLowerMs || !kPickupRaiseMs || !kFinalLowerMs) {
         return;
     }
-    // SET UP 保存两路上限；取较短的相对行程，确保两路都在限位内。
-    const double pickup_offset_deg = std::min(limits->upper_deg[0] - limits->lower_deg[0],
-                                              limits->upper_deg[1] - limits->lower_deg[1]);
 
     auto &chassis = chassis::controller();
     // LemLib 默认异步执行。每段结束后再下发下一段或操作机构。
@@ -51,9 +47,10 @@ void run_red_left() {
         }
         return can_run();
     };
-    const auto move_lift_and_claw = [&](double offset_deg, void (*actuate_claw)()) {
-        const auto timeout_ms = std::min(kLiftTimeoutMs, route_timer.getTimeLeft());
-        if (!lifting::move_to(offset_deg, timeout_ms, kLiftMaxPower) || !can_run()) {
+    const auto move_lift_and_claw = [&](int power, std::uint32_t duration_ms,
+                                        void (*actuate_claw)()) {
+        if (duration_ms > route_timer.getTimeLeft() || !lifting::move_for(power, duration_ms) ||
+            !can_run()) {
             return false;
         }
         actuate_claw();
@@ -68,7 +65,8 @@ void run_red_left() {
     chassis.setPose(-60.4F, 7.7F, 90.0F);
 
     chassis.moveToPoint(-49.9F, -13.4F, 1650); // Red Goal
-    if (!wait_for_drive() || !move_lift_and_claw(kReleaseOffsetDeg, claw::open_autonomous)) {
+    if (!wait_for_drive() ||
+        !move_lift_and_claw(-kLiftMaxPower, *kFirstLowerMs, claw::open_autonomous)) {
         return;
     }
     chassis.moveToPoint(-54.2F, -5.8F, 1000, {.forwards = false}); // 倒出 Red Goal
@@ -81,7 +79,8 @@ void run_red_left() {
         return;
     }
     chassis.moveToPoint(-31.3F, -19.9F, 1700);
-    if (!wait_for_drive() || !move_lift_and_claw(pickup_offset_deg, claw::close_autonomous)) {
+    if (!wait_for_drive() ||
+        !move_lift_and_claw(kLiftMaxPower, *kPickupRaiseMs, claw::close_autonomous)) {
         return;
     }
 
@@ -90,7 +89,8 @@ void run_red_left() {
         return;
     }
     chassis.moveToPoint(-44.8F, 12.9F, 2100);
-    if (!wait_for_drive() || !move_lift_and_claw(kReleaseOffsetDeg, claw::open_autonomous)) {
+    if (!wait_for_drive() ||
+        !move_lift_and_claw(-kLiftMaxPower, *kFinalLowerMs, claw::open_autonomous)) {
         return;
     }
     chassis.moveToPoint(-36.5F, 9.5F, 1050, {.forwards = false});

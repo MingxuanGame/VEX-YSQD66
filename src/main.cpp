@@ -31,37 +31,32 @@ void initialize() {
 
 void disabled() {
     stop_all();
-    brain_ui::reset_lift_calibration();
     while (pros::competition::is_disabled()) {
-        brain_ui::tick(false);
+        brain_ui::tick();
         pros::delay(kDriverPeriodMs);
     }
 }
 
 void competition_initialize() {
     stop_all();
-    brain_ui::reset_lift_calibration();
     while (pros::competition::is_disabled()) {
-        brain_ui::tick(false);
+        brain_ui::tick();
         pros::delay(kDriverPeriodMs);
     }
 }
 
 void autonomous() {
-    brain_ui::reset_lift_calibration();
-    lifting::load_limits();
     autons::run();
     stop_all();
 }
 
 void opcontrol() {
     stop_all();
-    brain_ui::reset_lift_calibration();
     bool manual_lift_armed = false;
 
     while (true) {
         auto wake_ms = pros::millis();
-        brain_ui::tick(true);
+        brain_ui::tick();
 
         auto &controller = io::prosController();
         if (controller.isConnected()) {
@@ -69,18 +64,14 @@ void opcontrol() {
             const int turn = controller.analog(io::Analog::RightX);
             chassis::arcade(throttle, turn);
 
-            if (brain_ui::lift_jog_mode()) {
-                manual_lift_armed = false;
-            } else {
-                const bool lift_up = controller.digital(io::Digital::L2);
-                const bool lift_down = controller.digital(io::Digital::L1);
-                manual_lift_armed |= (!lift_up && !lift_down);
-                const int lift_cmd =
-                    manual_lift_armed
-                        ? kLiftPower * (static_cast<int>(lift_up) - static_cast<int>(lift_down))
-                        : 0;
-                lifting::set_power(lift_cmd);
-            }
+            const bool lift_up = controller.digital(io::Digital::L2);
+            const bool lift_down = controller.digital(io::Digital::L1);
+            manual_lift_armed |= (!lift_up && !lift_down);
+            const int lift_cmd =
+                manual_lift_armed
+                    ? kLiftPower * (static_cast<int>(lift_up) - static_cast<int>(lift_down))
+                    : 0;
+            lifting::set_power(lift_cmd);
 
             const bool claw_open = controller.digital(io::Digital::R1);
             const bool claw_close = controller.digital(io::Digital::R2);
