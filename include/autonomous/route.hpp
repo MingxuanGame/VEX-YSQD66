@@ -32,6 +32,8 @@ struct Step {
     std::uint32_t minimum_ms = 0;
     // 底盘动作从组开始到启动的间隔。
     std::uint32_t start_delay_ms = 0;
+    // 原地相对转向角，右转为正。零表示使用绝对航向。
+    double turn_deg = 0.0;
 };
 
 struct DriveConfig {
