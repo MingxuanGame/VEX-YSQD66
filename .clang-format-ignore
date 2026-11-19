@@ -1,7 +1,10 @@
 # Keep SDK, vendor code, and generated files unchanged.
 include/pros/**
 include/liblvgl/**
+include/lemlib/**
+include/fmt/**
 include/api.h
+static/**
 firmware/**
 bin/**
 .d/**

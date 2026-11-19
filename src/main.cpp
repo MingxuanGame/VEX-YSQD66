@@ -1,49 +1,105 @@
 #include "main.h"
 
-#include "autonomous/program.hpp"
-#include "autonomous/route.hpp"
+#include "autons.hpp"
+#include "brain_ui.hpp"
+#include "chassis.h"
+#include "claw.hpp"
+#include "io/pros_controller.hpp"
 #include "lifting.hpp"
-#include "macro/session.hpp"
+
+#include <cstdint>
+
+namespace {
+
+constexpr std::uint32_t kDriverPeriodMs = 20;
+constexpr int kLiftPower = 80;
+
+void stop_all() {
+    chassis::stop();
+    lifting::stop();
+    claw::stop();
+}
+
+} // namespace
 
 void initialize() {
-    macrorec::initialize();
+    brain_ui::initialize();
+    chassis::initialize();
+    lifting::initialize();
+    claw::initialize();
 }
 
 void disabled() {
-    auto_route::stop();
-    macrorec::stop();
+    stop_all();
+    brain_ui::reset_lift_calibration();
     while (pros::competition::is_disabled()) {
-        macrorec::idle_tick();
-        pros::delay(20);
+        brain_ui::tick(false);
+        pros::delay(kDriverPeriodMs);
     }
 }
 
 void competition_initialize() {
-    auto_route::stop();
-    macrorec::stop();
+    stop_all();
+    brain_ui::reset_lift_calibration();
     while (pros::competition::is_disabled()) {
-        macrorec::idle_tick();
-        pros::delay(20);
+        brain_ui::tick(false);
+        pros::delay(kDriverPeriodMs);
     }
 }
 
 void autonomous() {
-    macrorec::stop();
+    brain_ui::reset_lift_calibration();
     lifting::load_limits();
-    auto_route::run_program();
+    autons::run();
+    stop_all();
 }
 
 void opcontrol() {
-    auto_route::stop();
-    macrorec::begin_driver();
+    stop_all();
+    brain_ui::reset_lift_calibration();
+    bool manual_lift_armed = false;
+
     while (true) {
         auto wake_ms = pros::millis();
-        macrorec::driver_tick();
-        if (macrorec::driver_period_ms() == 1 || pros::millis() - wake_ms >= 20) {
-            // 宏运行时每 1ms 检查帧边界；若 SD 操作跨周期则不再追赶。
+        brain_ui::tick(true);
+
+        auto &controller = io::prosController();
+        if (controller.isConnected()) {
+            const int throttle = controller.analog(io::Analog::LeftY);
+            const int turn = controller.analog(io::Analog::RightX);
+            chassis::arcade(throttle, turn);
+
+            if (brain_ui::lift_jog_mode()) {
+                manual_lift_armed = false;
+            } else {
+                const bool lift_up = controller.digital(io::Digital::X);
+                const bool lift_down = controller.digital(io::Digital::B);
+                manual_lift_armed |= (!lift_up && !lift_down);
+                const int lift_cmd =
+                    manual_lift_armed
+                        ? kLiftPower * (static_cast<int>(lift_up) - static_cast<int>(lift_down))
+                        : 0;
+                lifting::set_power(lift_cmd);
+            }
+
+            const bool claw_open = controller.digital(io::Digital::R1);
+            const bool claw_close = controller.digital(io::Digital::R2);
+            if (claw_open && !claw_close) {
+                claw::open();
+            } else if (claw_close && !claw_open) {
+                claw::close();
+            } else {
+                claw::stop();
+            }
+        } else {
+            stop_all();
+            manual_lift_armed = false;
+        }
+
+        if (pros::millis() - wake_ms >= kDriverPeriodMs) {
             pros::delay(1);
         } else {
-            pros::Task::delay_until(&wake_ms, 20);
+            pros::Task::delay_until(&wake_ms, kDriverPeriodMs);
         }
     }
 }

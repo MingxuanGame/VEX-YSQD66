@@ -21,10 +21,7 @@ USE_PACKAGE:=1
 
 # Add libraries you do not wish to include in the cold image here
 # EXCLUDE_COLD_LIBRARIES:= $(FWDIR)/your_library.a
-# Macro UI owns pros::screen directly. Whole-archiving liblvgl into the cold image
-# starts its display daemon, whose empty page overwrites the macro buttons.
-# Keep liblvgl available for explicit hot-image references without auto-starting it.
-EXCLUDE_COLD_LIBRARIES:= $(FWDIR)/liblvgl.a
+# EXCLUDE_COLD_LIBRARIES:=
 
 # Set this to 1 to add additional rules to compile your project as a PROS library template
 IS_LIBRARY:=0

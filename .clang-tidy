@@ -7,7 +7,7 @@ Checks: >-
   readability-identifier-naming
 WarningsAsErrors: ''
 HeaderFilterRegex: '(^|[/\\])include[/\\].*'
-ExcludeHeaderFilterRegex: '(^|[/\\])include[/\\](pros|liblvgl)[/\\]|(^|[/\\])include[/\\]api\.h$'
+ExcludeHeaderFilterRegex: '(^|[/\\])include[/\\](pros|liblvgl|lemlib|fmt)[/\\]|(^|[/\\])include[/\\]api\.h$'
 FormatStyle: file
 CheckOptions:
   readability-identifier-naming.GlobalVariablePrefix: '_g_'

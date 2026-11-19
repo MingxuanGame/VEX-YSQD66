@@ -38,6 +38,22 @@ void set_power(int power) {
     _g_claw.move(std::clamp(power, -127, 127));
 }
 
+void set_autonomous_power(int power) {
+    if (pros::competition::is_disabled() || !pros::competition::is_autonomous()) {
+        stop();
+        return;
+    }
+    _g_claw.move(std::clamp(power, -127, 127));
+}
+
+void open_autonomous() {
+    set_autonomous_power(kOpenPower);
+}
+
+void close_autonomous() {
+    set_autonomous_power(kClosePower);
+}
+
 void stop() {
     _g_claw.brake();
 }
