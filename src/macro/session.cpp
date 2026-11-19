@@ -58,19 +58,6 @@ const char *errno_name(int err) {
     }
 }
 
-const char *imu_status_name(int status) {
-    if (status == 0) {
-        return "RDY";
-    }
-    if (status == 19) {
-        return "CAL";
-    }
-    if (status == 0xFF) {
-        return "ERR";
-    }
-    return "UNK";
-}
-
 void format_sensor_value(double value, int err, char *buf, std::size_t size, bool compact) {
     if (std::isfinite(value)) {
         std::snprintf(buf, size, compact ? "%.0f" : "%.1fdeg", value);
@@ -121,26 +108,29 @@ bool Components::read_debug_info(DebugInfo &info) const {
     info = {};
     info.active = true;
     const int cal = diag.imu_calibrated ? 1 : 0;
-    const char *st_name = imu_status_name(diag.imu_status);
-    if (diag.calib_ms > 0) {
-        std::snprintf(info.summary.data(), info.summary.size(), "%s cal=%d st=%s(%d) t=%ums",
-                      diag.stage, cal, st_name, diag.imu_status,
+    if (diag.calib_ms > 0 && diag.imu_errno != 0) {
+        std::snprintf(info.summary.data(), info.summary.size(), "%s e=%d(%s) %ums", diag.stage,
+                      diag.imu_errno, errno_name(diag.imu_errno),
+                      static_cast<unsigned>(diag.calib_ms));
+    } else if (diag.calib_ms > 0) {
+        std::snprintf(info.summary.data(), info.summary.size(), "%s %ums", diag.stage,
                       static_cast<unsigned>(diag.calib_ms));
     } else if (diag.imu_errno != 0) {
-        std::snprintf(info.summary.data(), info.summary.size(), "%s cal=%d st=%s(%d) e=%d(%s)",
-                      diag.stage, cal, st_name, diag.imu_status, diag.imu_errno,
-                      errno_name(diag.imu_errno));
+        std::snprintf(info.summary.data(), info.summary.size(), "%s e=%d(%s)", diag.stage,
+                      diag.imu_errno, errno_name(diag.imu_errno));
     } else {
-        std::snprintf(info.summary.data(), info.summary.size(), "%s cal=%d st=%s(%d) tL=%d tR=%d",
-                      diag.stage, cal, st_name, diag.imu_status, diag.left_tare_errno,
-                      diag.right_tare_errno);
+        std::snprintf(info.summary.data(), info.summary.size(), "%s tL=%d tR=%d", diag.stage,
+                      diag.left_tare_errno, diag.right_tare_errno);
     }
 
     std::array<char, 24> rot_buf{};
     format_sensor_value(diag.imu_rotation_deg, diag.imu_errno, rot_buf.data(), rot_buf.size(),
                         false);
-    std::snprintf(info.imu.data(), info.imu.size(), "IMU P5: rot=%.20s st=%s(%d) rst=%s",
-                  rot_buf.data(), st_name, diag.imu_status, diag.imu_reset_ret == 1 ? "OK" : "ERR");
+    const char *reset_label = diag.imu_reset_ret == 0   ? "SKIP"
+                              : diag.imu_reset_ret == 1 ? "OK"
+                                                        : "ERR";
+    std::snprintf(info.imu.data(), info.imu.size(), "P5 %s(%d) rst=%s cal=%d rot=%.20s",
+                  diag.imu_status_label, diag.imu_status, reset_label, cal, rot_buf.data());
 
     std::array<std::array<char, 24>, 4> enc_buf{};
     std::array<std::array<char, 10>, 4> enc_short{};
@@ -497,7 +487,7 @@ void initialize() {
     initialize_screen();
     Feedback feedback{};
     if (!_g_components.read_feedback(feedback)) {
-        message("IMU / ENCODER NOT READY: CHECK DEVICES, RESTART");
+        message("IMU / ENCODER NOT READY: CHECK DEVICES");
         _g_components.read_debug_info(_g_debug_info);
     }
     render();

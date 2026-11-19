@@ -12,13 +12,15 @@
 namespace chassis {
 namespace {
 
-enum class ImuFailure { None, Reset, Timeout, CalibError, NotReady, Tare };
+enum class ImuFailure { None, Reset, Timeout, CalibError, Tare };
 
 // 功率偏移量：正值补偿右侧，负值补偿左侧。
 constexpr int kRightMotorOffsetToLeft = 0;
 constexpr std::uint8_t kImuPort = 5;
 constexpr std::uint32_t kImuCalibrationTimeoutMs = 3000;
 constexpr std::uint32_t kImuCalibrationPollMs = 10;
+// VEXos 状态位 4 表示已自动校准，PROS 4.2.3 的 get_status() 原样返回此位。
+constexpr int kImuAutoCalibrated = 1 << 4;
 
 // 面向车头：左前 2、左后 1，右前 3、右后 4；蓝齿轮，编码器单位为电机轴角度。
 pros::MotorGroup _g_left({2, 1}, pros::MotorGears::blue, pros::MotorUnits::degrees);
@@ -27,7 +29,7 @@ pros::Imu _g_imu(kImuPort);
 bool _g_imu_calibrated = false;
 ImuFailure _g_imu_failure = ImuFailure::None;
 int _g_imu_failure_errno = 0;
-int _g_imu_reset_ret = 1;
+int _g_imu_reset_ret = 0;
 std::uint32_t _g_imu_calib_ms = 0;
 int _g_left_tare_errno = 0;
 int _g_right_tare_errno = 0;
@@ -48,6 +50,26 @@ int apply_offset(int power, int offset) {
     return 0;
 }
 
+bool imu_is_calibrating(pros::ImuStatus status) {
+    // 与 PROS 4.2.3 内核一致，校准只看最低位，其他位包含安装方向等信息。
+    return (static_cast<int>(status) & pros::E_IMU_STATUS_CALIBRATING) != 0;
+}
+
+bool imu_auto_calibrated(pros::ImuStatus status) {
+    return status != pros::ImuStatus::error && !imu_is_calibrating(status) &&
+           (static_cast<int>(status) & kImuAutoCalibrated) != 0;
+}
+
+const char *imu_status_label(pros::ImuStatus status) {
+    if (status == pros::ImuStatus::error) {
+        return "ERR";
+    }
+    if (imu_is_calibrating(status)) {
+        return "CAL";
+    }
+    return imu_auto_calibrated(status) ? "AUTO" : "IDLE";
+}
+
 const char *imu_failure_stage(ImuFailure failure) {
     switch (failure) {
     case ImuFailure::Reset:
@@ -58,7 +80,6 @@ const char *imu_failure_stage(ImuFailure failure) {
         return "IMU_CALIB";
     case ImuFailure::Tare:
         return "IMU_TARE";
-    case ImuFailure::NotReady:
     case ImuFailure::None:
         return "IMU_NOT_RDY";
     }
@@ -74,12 +95,9 @@ void capture_failure_details(pros::ImuStatus status) {
     _g_diagnostics.left_tare_errno = _g_left_tare_errno;
     _g_diagnostics.right_tare_errno = _g_right_tare_errno;
 
-    if (status == pros::ImuStatus::error) {
-        errno = 0;
-        status = _g_imu.get_status();
-        _g_diagnostics.imu_errno = errno;
-    }
+    _g_diagnostics.imu_errno = status == pros::ImuStatus::error ? errno : 0;
     _g_diagnostics.imu_status = static_cast<int>(status);
+    _g_diagnostics.imu_status_label = imu_status_label(status);
 
     constexpr std::array<std::pair<pros::MotorGroup *, std::uint8_t>, 4> kMotors{{
         {&_g_left, 0},
@@ -110,7 +128,7 @@ void capture_failure_details(pros::ImuStatus status) {
             _g_diagnostics.imu_errno = _g_imu_failure_errno;
         }
         _g_diagnostics.stage = imu_failure_stage(_g_imu_failure);
-    } else if (status != pros::ImuStatus::ready) {
+    } else if (status == pros::ImuStatus::error || imu_is_calibrating(status)) {
         _g_diagnostics.stage = any_motor_nonfinite ? "IMU+ENC" : "IMU_STAT";
     } else if (_g_left_tare_errno != 0 || _g_right_tare_errno != 0) {
         _g_diagnostics.stage = "ENC_TARE";
@@ -141,44 +159,46 @@ void initialize() {
     _g_imu_calibrated = false;
     _g_imu_failure = ImuFailure::None;
     _g_imu_failure_errno = 0;
-    _g_imu_reset_ret = 1;
+    _g_imu_reset_ret = 0;
     _g_imu_calib_ms = 0;
     _g_left_tare_errno = 0;
     _g_right_tare_errno = 0;
     _g_diagnostics = {};
 
     const auto start_ms = pros::millis();
-    errno = 0;
-    const std::int32_t reset_ret = _g_imu.reset();
-    if (reset_ret != 1) {
-        _g_imu_failure = ImuFailure::Reset;
-        _g_imu_failure_errno = errno;
-        _g_imu_reset_ret = static_cast<int>(reset_ret);
-        capture_failure_details(_g_imu.get_status());
-        return;
-    }
-    errno = 0;
     auto status = _g_imu.get_status();
-    while (status == pros::ImuStatus::calibrating &&
+    bool calibration_started = status != pros::ImuStatus::error && imu_is_calibrating(status);
+    int reset_errno = 0;
+    if (status != pros::ImuStatus::error && !calibration_started && !imu_auto_calibrated(status)) {
+        _g_imu_reset_ret = _g_imu.reset();
+        calibration_started = _g_imu_reset_ret == 1;
+        reset_errno = calibration_started ? 0 : errno;
+        status = _g_imu.get_status();
+        if (!calibration_started && reset_errno != EAGAIN) {
+            _g_imu_failure = ImuFailure::Reset;
+            _g_imu_failure_errno = reset_errno;
+            capture_failure_details(status);
+            return;
+        }
+    }
+
+    // EAGAIN 也可能是 reset() 等待校准标志超时。只有观察到校准结束或自动校准完成才放行。
+    while (status != pros::ImuStatus::error &&
            pros::millis() - start_ms < kImuCalibrationTimeoutMs) {
+        if (imu_is_calibrating(status)) {
+            calibration_started = true;
+        } else if (calibration_started || imu_auto_calibrated(status)) {
+            _g_imu_calibrated = true;
+            return;
+        }
         pros::delay(kImuCalibrationPollMs);
-        errno = 0;
         status = _g_imu.get_status();
     }
-    const std::uint32_t elapsed_ms = pros::millis() - start_ms;
-    _g_imu_calibrated = elapsed_ms < kImuCalibrationTimeoutMs && status == pros::ImuStatus::ready;
-    if (!_g_imu_calibrated) {
-        _g_imu_calib_ms = elapsed_ms;
-        if (status == pros::ImuStatus::error) {
-            _g_imu_failure = ImuFailure::CalibError;
-            _g_imu_failure_errno = errno;
-        } else if (elapsed_ms >= kImuCalibrationTimeoutMs) {
-            _g_imu_failure = ImuFailure::Timeout;
-        } else {
-            _g_imu_failure = ImuFailure::NotReady;
-        }
-        capture_failure_details(status);
-    }
+    _g_imu_failure =
+        status == pros::ImuStatus::error ? ImuFailure::CalibError : ImuFailure::Timeout;
+    _g_imu_failure_errno = status == pros::ImuStatus::error ? errno : reset_errno;
+    _g_imu_calib_ms = pros::millis() - start_ms;
+    capture_failure_details(status);
 }
 
 void stop() {
@@ -194,6 +214,13 @@ void reset_state() {
     _g_left_tare_errno = (_g_left.tare_position_all() == 1) ? 0 : errno;
     errno = 0;
     _g_right_tare_errno = (_g_right.tare_position_all() == 1) ? 0 : errno;
+    // 自动校准可能晚于上电等待窗口。只在停车重建参考时接纳其完成状态。
+    if (_g_imu_failure == ImuFailure::Timeout && imu_auto_calibrated(_g_imu.get_status())) {
+        _g_imu_calibrated = true;
+        _g_imu_failure = ImuFailure::None;
+        _g_imu_failure_errno = 0;
+        _g_imu_calib_ms = 0;
+    }
     if (_g_imu_calibrated) {
         errno = 0;
         if (_g_imu.tare_rotation() != 1) {
@@ -206,8 +233,8 @@ void reset_state() {
 
 bool read_feedback(std::array<double, 4> &motor_position_deg, double &imu_rotation_deg) {
     const auto status = _g_imu.get_status();
-    if (!_g_imu_calibrated || status != pros::ImuStatus::ready || _g_left_tare_errno != 0 ||
-        _g_right_tare_errno != 0) {
+    if (!_g_imu_calibrated || status == pros::ImuStatus::error || imu_is_calibrating(status) ||
+        _g_left_tare_errno != 0 || _g_right_tare_errno != 0) {
         capture_failure_details(status);
         return false;
     }
@@ -225,6 +252,8 @@ bool read_feedback(std::array<double, 4> &motor_position_deg, double &imu_rotati
     _g_diagnostics = {};
     _g_diagnostics.imu_calibrated = true;
     _g_diagnostics.imu_status = static_cast<int>(status);
+    _g_diagnostics.imu_status_label = imu_status_label(status);
+    _g_diagnostics.imu_reset_ret = _g_imu_reset_ret;
     _g_diagnostics.imu_rotation_deg = imu_rotation_deg;
     _g_diagnostics.motor_position_deg = motor_position_deg;
     return true;

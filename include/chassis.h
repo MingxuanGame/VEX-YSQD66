@@ -11,8 +11,9 @@ struct SensorDiagnostics {
     const char *stage = "OK";
     bool imu_calibrated = false;
     int imu_status = 0;
+    const char *imu_status_label = "IDLE";
     int imu_errno = 0;
-    int imu_reset_ret = 1;
+    int imu_reset_ret = 0; // 0 表示沿用已有校准，未调用 reset()。
     std::uint32_t calib_ms = 0;
     double imu_rotation_deg = 0.0;
     std::array<double, 4> motor_position_deg{};
@@ -21,7 +22,7 @@ struct SensorDiagnostics {
     int right_tare_errno = 0;
 };
 
-// 初始化四电机底盘与端口 5 的 IMU；停车校准最多等待 3s，不驱动车辆。
+// 初始化四电机底盘与端口 5 的 IMU；停车等待校准最多 3s，不驱动车辆。
 void initialize();
 
 // 停止输出、保持刹车模式，清零四电机编码器和 IMU 转角参考，不重新校准或机械归零。
