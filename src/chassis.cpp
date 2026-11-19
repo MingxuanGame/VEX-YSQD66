@@ -22,8 +22,8 @@ constexpr float kWheelDiameterIn = lemlib::Omniwheel::NEW_4; // 待实机确认�
 constexpr float kDrivetrainRpm = 600.0F; // 蓝齿轮直驱；若有外接减速比须按轮轴转速修改
 constexpr float kHorizontalDrift = 8.0F; // 双侧直轮抓地力较高，LemLib 建议初值 8
 
-pros::MotorGroup _g_left({2, 1}, pros::MotorGears::blue, pros::MotorUnits::degrees);
-pros::MotorGroup _g_right({-3, -4}, pros::MotorGears::blue, pros::MotorUnits::degrees);
+pros::MotorGroup _g_left({-2, -1}, pros::MotorGears::blue, pros::MotorUnits::degrees);
+pros::MotorGroup _g_right({3, 4}, pros::MotorGears::blue, pros::MotorUnits::degrees);
 pros::Imu _g_imu(kImuPort);
 
 lemlib::Drivetrain _g_drivetrain(&_g_left, &_g_right, kTrackWidthIn, kWheelDiameterIn,

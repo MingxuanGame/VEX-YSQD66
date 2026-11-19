@@ -136,8 +136,8 @@ void handle_lift_limits(bool driver_enabled, bool set_low, bool set_up, bool use
     const bool allowed = practice_allowed(driver_enabled);
     auto &controller = io::prosController();
     const bool connected = allowed && controller.isConnected();
-    const bool up = connected && controller.digital(io::Digital::X);
-    const bool down = connected && controller.digital(io::Digital::B);
+    const bool up = connected && controller.digital(io::Digital::L2);
+    const bool down = connected && controller.digital(io::Digital::L1);
     const bool both = up && down;
     const bool moving_cmd = up != down;
     const auto position = lifting::read_position();
@@ -162,7 +162,7 @@ void handle_lift_limits(bool driver_enabled, bool set_low, bool set_up, bool use
             }
             if (now_ms - *_g_lift_jog_started_ms >= kLiftJogTimeoutMs) {
                 _g_lift_jog_armed = false;
-                _g_status = "JOG TIMEOUT - RELEASE X/B";
+                _g_status = "JOG TIMEOUT - RELEASE L1/L2";
                 lifting::stop();
             } else {
                 _g_status = nullptr;
@@ -184,7 +184,7 @@ void handle_lift_limits(bool driver_enabled, bool set_low, bool set_up, bool use
         } else if (!position) {
             _g_status = "CHECK MOTORS ON P9 AND P10";
         } else if (moving_cmd || _g_lift_jog_started_ms) {
-            _g_status = "RELEASE X/B AND LET LIFT STOP";
+            _g_status = "RELEASE L1/L2 AND LET LIFT STOP";
         } else if (use_saved) {
             if (lifting::use_saved_limits(*position)) {
                 _g_lift_lower_deg.reset();
@@ -292,7 +292,7 @@ void initialize() {
                         on_auton_clicked, reinterpret_cast<void *>(static_cast<std::uintptr_t>(i)));
     }
 
-    make_label(screen, 10, 82, 0x8FA3B8, &lv_font_montserrat_14, "LIFT LIMITS (X up / B down)");
+    make_label(screen, 10, 82, 0x8FA3B8, &lv_font_montserrat_14, "LIFT LIMITS (L2 up / L1 down)");
     _g_now_label = make_label(screen, 10, 102, 0xFFFFFF, &lv_font_montserrat_14, "NOW   P9: --");
     _g_low_label = make_label(screen, 10, 120, 0xD0DCE5, &lv_font_montserrat_14, "LOW   P9: --");
     _g_up_label = make_label(screen, 10, 138, 0xD0DCE5, &lv_font_montserrat_14, "UP    P9: --");

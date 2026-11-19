@@ -72,8 +72,8 @@ void opcontrol() {
             if (brain_ui::lift_jog_mode()) {
                 manual_lift_armed = false;
             } else {
-                const bool lift_up = controller.digital(io::Digital::X);
-                const bool lift_down = controller.digital(io::Digital::B);
+                const bool lift_up = controller.digital(io::Digital::L2);
+                const bool lift_down = controller.digital(io::Digital::L1);
                 manual_lift_armed |= (!lift_up && !lift_down);
                 const int lift_cmd =
                     manual_lift_armed

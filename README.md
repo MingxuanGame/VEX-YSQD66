@@ -5,7 +5,7 @@
 ## 功能概览
 
 - **LemLib 底盘与定位**：沿用四电机双侧直轮底盘（左前 2、左后 1，右前 3、右后 4 反转，蓝齿轮 600 rpm）及端口 5 的 IMU；不外接从动定位轮，由 `lemlib::Chassis` 自动通过左右驱动电机组编码器与 IMU 进行里程计解算与闭环运动控制。
-- **手动驾驶**：在 `opcontrol()` 中以 20ms 周期通过 `io::Controller` 读取手柄，左摇杆前后与右摇杆转向经 `lemlib::ExpoDriveCurve` 指数曲线和 `lemlib::Chassis::arcade()` 混控驱动底盘；按住 **X** 上升、**B** 下降控制升降。按 **R1** 放气松开夹爪，按 **R2** 充气夹紧，松键后保持状态。
+- **手动驾驶**：在 `opcontrol()` 中以 20ms 周期通过 `io::Controller` 读取手柄，左摇杆前后与右摇杆转向经 `lemlib::ExpoDriveCurve` 指数曲线和 `lemlib::Chassis::arcade()` 混控驱动底盘；按住 **L2** 上升、**L1** 下降控制升降。按 **R1** 放气松开夹爪，按 **R2** 充气夹紧，松键后保持状态。
 - **Brain 触屏界面**：基于 LVGL 绘制单屏界面，上半区直观选择 4 个自动赛预设（`RED LEFT` / `RED DOWN` / `BLUE RIGHT` / `BLUE UP`），下半区保留升降限位测量（`NOW` / `LOW` / `UP` 读数与 `[SET LOW]` / `[SET UP]` / `[USE SAVED]` 按钮）。
 - **自动赛入口**：`src/autons.cpp` 仅保留唯一公开函数 `autons::run()`，由 `autonomous()` 调用；内部预留 `run_red_left()`、`run_red_down()`、`run_blue_right()`、`run_blue_up()`，按屏幕所选预设调度对应代码，可在其中使用 LemLib Path Planner 与 `C++ Custom` 组装路线。
 

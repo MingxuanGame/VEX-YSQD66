@@ -19,7 +19,7 @@ void reset_lift_calibration();
 // 当前是否处于限位点动标定状态（未激活限位或已采集下限待采上限）。
 bool lift_jog_mode();
 
-// 周期刷新 Brain 屏幕、处理按钮事件并在点动模式下响应 X/B 键（建议 20ms 调用一次）。
+// 周期刷新 Brain 屏幕、处理按钮事件并在点动模式下响应 L2/L1 键（建议 20ms 调用一次）。
 // driver_enabled 为 true 表示处于启用的手动控制阶段。
 void tick(bool driver_enabled);
 

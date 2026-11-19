@@ -6,7 +6,7 @@
 namespace claw {
 namespace {
 
-constexpr char kClawPort = 'D';
+constexpr char kClawPort = 'E';
 constexpr bool kOpenOutput = false;
 constexpr bool kClosedOutput = true;
 
