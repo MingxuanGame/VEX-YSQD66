@@ -18,12 +18,10 @@
 namespace autons {
 namespace {
 
-// 已知缺口：当前只有 run_red_left 有完整路线；red_down / blue_right / blue_up 只重置 pose。
 void run_red_left() {
     // Override 2.1 第 18 页：对抗赛自动时段为 15 秒，预留停车时间。
     constexpr std::uint32_t kRouteBudgetMs = 14500;
     constexpr std::uint32_t kPollMs = 10;
-    // 已知依赖：lifting::limits() 为空时整条路线直接返回；需先 SET UP 或 USE SAVED。
     // move_to 使用相对角度，0 对应 Brain 菜单实测的 SET LOW。
     constexpr double kReleaseOffsetDeg = 0.0;
     // 待实机确认机构动作时间。
@@ -108,21 +106,21 @@ void run_red_down() {
     auto &chassis = chassis::controller();
     chassis.setPose(0.0F, 0.0F, 0.0F);
 
-    // 已知缺口：仅占位 reset pose，没有实际自动路线。
+    // 预留：红方下路线（在此组装 LemLib Path Planner 路径与 C++ Custom 升降/夹爪代码）
 }
 
 void run_blue_right() {
     auto &chassis = chassis::controller();
     chassis.setPose(0.0F, 0.0F, 0.0F);
 
-    // 已知缺口：仅占位 reset pose，没有实际自动路线。
+    // 预留：蓝方右路线（在此组装 LemLib Path Planner 路径与 C++ Custom 升降/夹爪代码）
 }
 
 void run_blue_up() {
     auto &chassis = chassis::controller();
     chassis.setPose(0.0F, 0.0F, 0.0F);
 
-    // 已知缺口：仅占位 reset pose，没有实际自动路线。
+    // 预留：蓝方上路线（在此组装 LemLib Path Planner 路径与 C++ Custom 升降/夹爪代码）
 }
 
 } // namespace

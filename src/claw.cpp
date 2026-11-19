@@ -7,7 +7,6 @@ namespace claw {
 namespace {
 
 constexpr char kClawPort = 'E';
-// 已知文档不一致：README/mechanisms 中仍写 D 口，代码实际为 E；接线前必须确认。
 constexpr bool kOpenOutput = false;
 constexpr bool kClosedOutput = true;
 

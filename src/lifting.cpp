@@ -39,7 +39,6 @@ std::optional<Position> _g_lower_reference;
 std::optional<Position> _g_saved_travel;
 
 pros::Mutex _g_motion_mutex;
-// 已知：异步升降用 unique_ptr<Task> / make_unique，会产生动态内存分配。
 std::unique_ptr<pros::Task> _g_motion_task;
 std::atomic<bool> _g_motion_active{false};
 std::atomic<bool> _g_cancel_requested{false};
@@ -212,8 +211,6 @@ void initialize() {
 }
 
 void load_limits() {
-    // 已知问题：这里只读取 SD 行程；没有 lower_reference 时 apply_saved_travel 不会生成 limits。
-    // 冷启动直接进自动赛前必须先确认下限并调用 use_saved_limits(current)。
     _g_saved_travel = read_saved_travel();
     if (_g_lower_reference) {
         read_position();
