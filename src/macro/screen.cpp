@@ -13,6 +13,7 @@ constexpr std::uint32_t kText = 0xFFFFFF;
 constexpr std::uint32_t kDebugText = 0xFFD166;
 constexpr std::uint32_t kButton = 0x236A93;
 constexpr std::uint32_t kStop = 0xA53030;
+constexpr int kHomeSplitX = 242;
 constexpr std::array<int, 3> kHomeRows{90, 132, 174};
 constexpr int kHomeButtonHeight = 36;
 constexpr std::array<TouchAction, 3> kHomeActions{TouchAction::NewRecording, TouchAction::OpenList,
@@ -62,6 +63,15 @@ void chinese_label(int x, int y, const std::uint32_t *rows, std::size_t count) {
     }
 }
 
+void position_label(int y, const char *name, const std::optional<lifting::Position> &position) {
+    if (position) {
+        pros::screen::print(pros::E_TEXT_SMALL, 12, y, "%-5s   %9.1f   %9.1f", name, (*position)[0],
+                            (*position)[1]);
+    } else {
+        pros::screen::print(pros::E_TEXT_SMALL, 12, y, "%-5s          --          --", name);
+    }
+}
+
 } // namespace
 
 void initialize_screen() {
@@ -92,8 +102,24 @@ Touch poll_touch(View view, const std::vector<int> &ids, std::size_t page, bool 
         for (std::size_t row = 0; row < kHomeRows.size(); ++row) {
             const int top = kHomeRows[row];
             if (y >= top && y <= top + kHomeButtonHeight) {
+                if (row == 2 && x >= kHomeSplitX) {
+                    return {TouchAction::OpenLiftLimits};
+                }
                 return {kHomeActions[row]};
             }
+        }
+    } else if (view == View::LiftLimits && y >= 185 && y <= 235) {
+        if (x <= 120) {
+            return {TouchAction::MarkLiftLower};
+        }
+        if (x >= 128 && x <= 236) {
+            return {TouchAction::MarkLiftUpper};
+        }
+        if (x >= 244 && x <= 379) {
+            return {TouchAction::UseSavedLiftLimits};
+        }
+        if (x >= 387) {
+            return {TouchAction::Home};
         }
     } else if (view == View::List || view == View::Checkpoints) {
         if (y >= 69 && y < 193) {
@@ -144,17 +170,19 @@ void draw_screen(View view, const std::vector<int> &ids, std::size_t page, const
         if (debug_info.active) {
             debug_label(12, 65, debug_info.summary.data());
         }
-        constexpr std::array<const char *, 3> kHomeLabels{"NEW RECORDING", "USE MACRO",
-                                                          "CALIBRATION"};
-        for (std::size_t row = 0; row < kHomeRows.size(); ++row) {
+        constexpr std::array<const char *, 2> kHomeLabels{"NEW RECORDING", "USE MACRO"};
+        for (std::size_t row = 0; row < kHomeLabels.size(); ++row) {
             const int top = kHomeRows[row];
             rectangle(12, top, 467, top + kHomeButtonHeight, kButton);
             label(210, top + 11, kHomeLabels[row]);
         }
         chinese_label(40, kHomeRows[0] + 6, kNewLabel.data(), kNewLabel.size() / 24);
         chinese_label(40, kHomeRows[1] + 6, kUseLabel.data(), kUseLabel.size() / 24);
-        chinese_label(40, kHomeRows[2] + 6, kCalibrationLabel.data(),
-                      kCalibrationLabel.size() / 24);
+        const int top = kHomeRows[2];
+        rectangle(12, top, kHomeSplitX - 6, top + kHomeButtonHeight, kButton);
+        chinese_label(24, top + 6, kCalibrationLabel.data(), kCalibrationLabel.size() / 24);
+        label(130, top + 11, "CALIBRATION");
+        button(kHomeSplitX, top, 467, top + kHomeButtonHeight, "LIFT LIMITS");
         if (debug_info.active) {
             debug_label(12, 220, debug_info.encoders_all.data());
         }
@@ -217,6 +245,39 @@ void draw_screen(View view, const std::vector<int> &ids, std::size_t page, const
         }
         button(12, 185, 467, 235, retry_save ? "DISCARD / HOME" : "HOME");
     }
+}
+
+void draw_lift_limits(std::uint32_t now_ms, const std::optional<lifting::Position> &position,
+                      const std::optional<lifting::Position> &lower, const char *status,
+                      bool force) {
+    const bool full = force || _g_previous_view != View::LiftLimits;
+    if (!full && now_ms - _g_draw_ms < 100) {
+        return;
+    }
+    _g_draw_ms = now_ms;
+    _g_previous_view = View::LiftLimits;
+    if (full) {
+        pros::screen::erase();
+        pros::screen::set_pen(kText);
+        pros::screen::print(pros::E_TEXT_MEDIUM, 12, 12, "LIFT LIMITS");
+        label(12, 42, "X up / B down: short jog. Release before SET.");
+        label(12, 62, "Leave clearance at both ends.");
+        label(12, 84, "MOTOR DEG         P9         P10");
+        button(12, 185, 120, 235, "SET LOWER");
+        button(128, 185, 236, 235, "SET UPPER");
+        button(244, 185, 379, 235, "USE SAVED");
+        button(387, 185, 467, 235, "HOME");
+    }
+    rectangle(12, 102, 467, 178, kBackground);
+    const auto &limits = lifting::limits();
+    position_label(105, "NOW", position);
+    position_label(124, "LOWER",
+                   lower    ? lower
+                   : limits ? std::optional{limits->lower_deg}
+                            : std::nullopt);
+    position_label(143, "UPPER",
+                   !lower && limits ? std::optional{limits->upper_deg} : std::nullopt);
+    debug_label(12, 162, status);
 }
 
 } // namespace macrorec

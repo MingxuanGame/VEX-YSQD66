@@ -1,18 +1,23 @@
 #pragma once
 
+#include "lifting.hpp"
 #include "macro/engine.hpp"
 
 #include <vector>
 
 namespace macrorec {
 
-enum class View { Home, List, Checkpoints, Running, Result, Calibration };
+enum class View { Home, List, Checkpoints, Running, Result, Calibration, LiftLimits };
 
 enum class TouchAction {
     None,
     NewRecording,
     OpenList,
     OpenCalibration,
+    OpenLiftLimits,
+    MarkLiftLower,
+    MarkLiftUpper,
+    UseSavedLiftLimits,
     Select,
     Resume,
     Previous,
@@ -40,5 +45,10 @@ Touch poll_touch(View view, const std::vector<int> &ids, std::size_t page, bool 
 void draw_screen(View view, const std::vector<int> &ids, std::size_t page, const Engine &engine,
                  std::uint32_t now_ms, int selected_id, const char *message,
                  const DebugInfo &debug_info, bool retry_save, bool force = false);
+
+// 显示实时电机轴角度及采集的端点，常态刷新周期 100ms。
+void draw_lift_limits(std::uint32_t now_ms, const std::optional<lifting::Position> &position,
+                      const std::optional<lifting::Position> &lower, const char *status,
+                      bool force);
 
 } // namespace macrorec

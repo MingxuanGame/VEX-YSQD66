@@ -15,6 +15,8 @@ constexpr std::uint32_t kRecordMs = 14500;
 constexpr std::uint32_t kResetMs = 500;
 constexpr std::size_t kFrameCount = kRecordMs / kPeriodMs;
 constexpr std::uint16_t kButtonMask = 0x0fff;
+constexpr std::uint16_t kLiftDownButton = 1U << 5;   // B
+constexpr std::uint16_t kLiftUpButton = 1U << 6;     // X
 constexpr std::uint16_t kCheckpointButton = 1U << 8; // L1：按下沿标记检查点
 
 // 手柄原始输入快照：四轴 [-127, 127]，按键为 12 位掩码。
@@ -31,6 +33,7 @@ struct Input {
 struct Command {
     int chassis_left_power = 0;
     int chassis_right_power = 0;
+    int lift_power = 0;
 };
 
 // 帧开始、下发指令前的反馈；相对宏起点，电机依次为左前/左后/右前/右后。
@@ -59,7 +62,7 @@ struct DebugInfo {
 
 using Clip = std::array<Frame, kFrameCount>;
 
-// Arcade 混控映射并等比限幅；断联时输出零。
+// Arcade 混控和升降按键映射；断联时输出零。
 Command map_input(const Input &input);
 
 // 检查加载帧的轴范围、按键掩码、组件输出与反馈有限性。
@@ -69,7 +72,8 @@ bool valid_frame(const Frame &frame);
 class Hardware {
 public:
     virtual ~Hardware() = default;
-    virtual void apply(const Command &command) = 0;
+    // 返回可写入宏帧的指令，升降功率包含限位和降速的结果。
+    virtual Command apply(Command command) = 0;
     virtual void stop() = 0;
     virtual void reset() = 0;
     // 非阻塞读取原始反馈（度）；校准未完成或读取失败返回 false，不允许驱动宏。

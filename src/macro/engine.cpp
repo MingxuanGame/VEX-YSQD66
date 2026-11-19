@@ -10,6 +10,7 @@ namespace {
 
 constexpr double kPidDtS = static_cast<double>(kPeriodMs) / 1000.0;
 constexpr double kMaxPower = 127.0;
+constexpr int kLiftPower = 80;
 // 待实机标定：kp 为功率/度，ki 为功率/(度·秒)，kd 为功率·秒/度。
 // 初始只启用 P；编码器及航向各最多修正 20 功率，积分限值单位为度·秒。
 constexpr math::PidConfig kEncoderPidConfig{0.1, 0.0, 0.0, 0.0, 20.0};
@@ -26,7 +27,9 @@ Command map_input(const Input &input) {
     const int left = forward + turn;
     const int right = forward - turn;
     const int scale = std::max({127, std::abs(left), std::abs(right)});
-    return {left * 127 / scale, right * 127 / scale};
+    const bool up = (input.buttons & kLiftUpButton) != 0;
+    const bool down = (input.buttons & kLiftDownButton) != 0;
+    return {left * 127 / scale, right * 127 / scale, kLiftPower * (up - down)};
 }
 
 bool valid_frame(const Frame &frame) {
@@ -35,7 +38,7 @@ bool valid_frame(const Frame &frame) {
            in_range(frame.input.right_x) && in_range(frame.input.right_y) &&
            (frame.input.buttons & ~kButtonMask) == 0 &&
            in_range(frame.command.chassis_left_power) &&
-           in_range(frame.command.chassis_right_power) &&
+           in_range(frame.command.chassis_right_power) && in_range(frame.command.lift_power) &&
            std::isfinite(frame.feedback.imu_rotation_deg) &&
            std::all_of(frame.feedback.motor_position_deg.begin(),
                        frame.feedback.motor_position_deg.end(),
@@ -79,7 +82,8 @@ bool Engine::apply_replay(const Frame &frame, const Feedback &feedback) {
     }
     const double scale = std::max({kMaxPower, std::abs(left), std::abs(right)});
     m_hardware.apply({static_cast<int>(std::lround(left * kMaxPower / scale)),
-                      static_cast<int>(std::lround(right * kMaxPower / scale))});
+                      static_cast<int>(std::lround(right * kMaxPower / scale)),
+                      frame.command.lift_power});
     return true;
 }
 
@@ -232,10 +236,10 @@ void Engine::update(std::uint32_t now_ms, bool allowed, const Input &input) {
             return;
         }
         const bool l1_down = (input.buttons & kCheckpointButton) != 0;
-        m_clip[index] = {input, map_input(input), feedback, l1_down && !m_checkpoint_button_down};
+        const Command applied = m_hardware.apply(map_input(input));
+        m_clip[index] = {input, applied, feedback, l1_down && !m_checkpoint_button_down};
         m_checkpoint_button_down = l1_down;
         m_status = "RECORDING | L1: CHECKPOINT";
-        m_hardware.apply(m_clip[index].command);
     } else {
         m_status = "REPLAYING";
         if (!apply_replay(m_clip[index], feedback)) {

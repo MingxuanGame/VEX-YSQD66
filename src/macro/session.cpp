@@ -1,19 +1,15 @@
 #include "macro/session.hpp"
 #include "calibration/session.hpp"
 #include "chassis.h"
-#if 0 // 机构手动控制：暂时关闭
-#include "claw.hpp"
-#endif
 #include "io/pros_controller.hpp"
-#if 0 // 机构手动控制：暂时关闭
-#include "lift.hpp"
-#endif
+#include "lifting.hpp"
 #include "macro/engine.hpp"
 #include "macro/screen.hpp"
 #include "macro/storage.hpp"
 #include "pros/misc.hpp"
 #include "pros/rtos.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cerrno>
 #include <cmath>
@@ -23,19 +19,8 @@
 namespace macrorec {
 namespace {
 
-#if 0 // 机构手动控制：暂时关闭，确认端口/按键后启用
-// ===== 机构手动控制：新增代码，按键暂为占位 =====
-// TODO: 按键布局确认后只改这里。
-constexpr std::uint16_t kLiftToggleButton = 1U << 10; // 占位：R1
-constexpr std::uint16_t kClawOpenButton = 1U << 9;    // 占位：L2
-constexpr std::uint16_t kClawCloseButton = 1U << 11;  // 占位：R2
-
-void stop_mechanisms() {
-    lift::stop();
-    claw::stop();
-}
-// ===== 机构手动控制结束 =====
-#endif
+constexpr std::uint16_t kLiftButtons = kLiftUpButton | kLiftDownButton;
+constexpr std::uint32_t kLiftJogTimeoutMs = 500;
 
 const char *errno_name(int err) {
     switch (err) {
@@ -77,22 +62,26 @@ void format_sensor_value(double value, int err, char *buf, std::size_t size, boo
 
 class Components final : public Hardware {
 public:
-    void apply(const Command &command) override;
+    Command apply(Command command) override;
     void stop() override;
     void reset() override;
     bool read_feedback(Feedback &feedback) override;
     bool read_debug_info(DebugInfo &info) const override;
 };
 
-void Components::apply(const Command &command) {
+Command Components::apply(Command command) {
     chassis::set_power(command.chassis_left_power, command.chassis_right_power);
+    command.lift_power = lifting::set_power(command.lift_power);
+    return command;
 }
 
 void Components::stop() {
     chassis::stop();
+    lifting::stop();
 }
 
 void Components::reset() {
+    lifting::stop();
     chassis::reset_state();
 }
 
@@ -168,6 +157,11 @@ int _g_selected_id = 0;
 bool _g_pending_save = false;
 bool _g_retry_save = false;
 bool _g_redraw = true;
+bool _g_manual_lift_armed = false;
+bool _g_lift_jog_armed = false;
+std::optional<std::uint32_t> _g_lift_jog_started_ms;
+std::optional<lifting::Position> _g_lift_lower_deg;
+const char *_g_lift_status = nullptr;
 std::uint32_t _g_service_ms = 0;
 std::array<char, 96> _g_message{"20ms | 14.5s record + 0.5s reset"};
 std::array<char, 16384> _g_listing{};
@@ -240,6 +234,80 @@ void render() {
     _g_redraw = false;
 }
 
+void tick_lift_limits(std::uint32_t now_ms, bool driver, TouchAction action) {
+    const bool allowed = driver && practice_allowed();
+    const Input input = allowed ? read_input() : Input{};
+    const auto position = lifting::read_position();
+    const bool ready = allowed && input.connected && position.has_value();
+    const auto buttons = input.buttons & kLiftButtons;
+    const bool capture = action == TouchAction::MarkLiftLower ||
+                         action == TouchAction::MarkLiftUpper ||
+                         action == TouchAction::UseSavedLiftLimits;
+
+    if (!position) {
+        _g_lift_lower_deg.reset();
+    }
+    if (!ready || buttons == kLiftButtons || capture) {
+        _g_lift_jog_armed = false;
+    } else if (buttons == 0) {
+        _g_lift_jog_armed = true;
+        _g_lift_jog_started_ms.reset();
+    }
+    if (_g_lift_jog_armed && buttons != 0) {
+        if (!_g_lift_jog_started_ms) {
+            _g_lift_jog_started_ms = now_ms;
+        }
+        if (now_ms - *_g_lift_jog_started_ms >= kLiftJogTimeoutMs) {
+            _g_lift_jog_armed = false;
+            _g_lift_status = "JOG TIMEOUT - RELEASE X/B";
+        } else {
+            _g_lift_status = nullptr;
+            lifting::jog(buttons == kLiftUpButton ? 1 : -1);
+        }
+    }
+    if (!_g_lift_jog_armed || buttons == 0) {
+        lifting::stop();
+    }
+
+    if (capture && ready) {
+        if (buttons != 0 || _g_lift_jog_started_ms) {
+            _g_lift_status = "RELEASE X/B AND LET LIFT STOP";
+        } else if (action == TouchAction::UseSavedLiftLimits) {
+            if (lifting::use_saved_limits(*position)) {
+                _g_lift_lower_deg.reset();
+                _g_lift_status = "SAVED LIMITS ACTIVE";
+            } else {
+                _g_lift_status = "CANNOT RESTORE LIMITS. CHECK SD AND MOTORS.";
+            }
+        } else if (action == TouchAction::MarkLiftLower) {
+            _g_lift_lower_deg = position;
+            _g_lift_status = "LOWER CAPTURED. JOG UP, THEN SET UPPER.";
+        } else if (!_g_lift_lower_deg) {
+            _g_lift_status = "SET LOWER FIRST";
+        } else if (lifting::set_limits({*_g_lift_lower_deg, *position})) {
+            _g_lift_lower_deg.reset();
+            _g_lift_status = "LIMITS SAVED TO SD AND ACTIVE";
+        } else {
+            _g_lift_status = "CHECK UPWARD ENCODER DIRECTION AND SD CARD";
+        }
+    }
+    const char *status = _g_lift_status;
+    if (!position) {
+        status = "CHECK MOTORS ON P9 AND P10";
+    } else if (!allowed) {
+        status = "UNPLUG FIELD AND ENABLE DRIVER TO SET LIMITS";
+    } else if (!input.connected) {
+        status = "CONNECT CONTROLLER";
+    } else if (!status) {
+        status = _g_lift_lower_deg             ? "JOG UP, THEN SET UPPER"
+                 : lifting::limits()           ? "LIMITS ACTIVE"
+                 : lifting::has_saved_limits() ? "AT ORIGINAL LOWER END, TAP USE SAVED"
+                                               : "JOG DOWN, THEN SET LOWER";
+    }
+    draw_lift_limits(now_ms, position, _g_lift_lower_deg, status, _g_redraw || capture);
+    _g_redraw = false;
+}
+
 void save_pending() {
     _g_components.stop();
     _g_retry_save = true;
@@ -268,18 +336,13 @@ void save_pending() {
     result("SD SAVED AND VERIFIED");
 }
 
-void handle_touch(bool driver) {
-    const auto touch = poll_touch(_g_view, list_items(), _g_page, _g_retry_save);
+void handle_touch(bool driver, Touch touch) {
     if (touch.action == TouchAction::None) {
         return;
     }
     // 切换菜单或访问 SD 前立即停止电机输出。
     _g_components.stop();
-#if 0 // 机构手动控制：暂时关闭
-    // ===== 机构手动控制：菜单切换时停止机构 =====
-    stop_mechanisms();
-    // ===== 机构手动控制结束 =====
-#endif
+    _g_manual_lift_armed = false;
     switch (touch.action) {
     case TouchAction::NewRecording:
         if (!driver || !practice_allowed()) {
@@ -316,6 +379,14 @@ void handle_touch(bool driver) {
         _g_calibration.open();
         _g_view = View::Calibration;
         return;
+    case TouchAction::OpenLiftLimits:
+        _g_view = View::LiftLimits;
+        _g_lift_lower_deg.reset();
+        _g_lift_status = nullptr;
+        _g_lift_jog_armed = false;
+        _g_lift_jog_started_ms.reset();
+        _g_redraw = true;
+        return;
     case TouchAction::Select: {
         if (!driver || !practice_allowed()) {
             result("REPLAY: UNPLUG FIELD, ENABLE DRIVER");
@@ -339,13 +410,19 @@ void handle_touch(bool driver) {
         _g_checkpoints.push_back(static_cast<int>(kFrameCount));
         _g_page = 0;
         _g_view = View::Checkpoints;
-        message("START AT ORIGINAL POSE | SELECT CHECKPOINT");
+        message("MATCH ORIGINAL POSE + LIFT HEIGHT | SELECT CHECKPOINT");
         return;
     }
-    case TouchAction::Resume:
+    case TouchAction::Resume: {
+        const auto frame_count = static_cast<std::size_t>(touch.id);
+        if (driver && practice_allowed() && !lifting::limits() &&
+            std::any_of(_g_loaded.begin(), _g_loaded.begin() + frame_count,
+                        [](const Frame &frame) { return frame.command.lift_power != 0; })) {
+            result("SET LIFT LIMITS BEFORE REPLAY");
+            return;
+        }
         if (driver && practice_allowed() &&
-            _g_engine.start_from_checkpoint(_g_loaded, static_cast<std::size_t>(touch.id),
-                                            pros::millis())) {
+            _g_engine.start_from_checkpoint(_g_loaded, frame_count, pros::millis())) {
             _g_view = View::Running;
             message(_g_engine.recording() ? "REPLAY TO CHECKPOINT | WAIT 3s | RECORD NEW TAIL"
                                           : "FULL REPLAY: CONTROLLER INPUT IGNORED");
@@ -353,6 +430,7 @@ void handle_touch(bool driver) {
             result("REPLAY START BLOCKED");
         }
         return;
+    }
     case TouchAction::Previous:
         if (_g_page > 0) {
             --_g_page;
@@ -382,6 +460,9 @@ void handle_touch(bool driver) {
         }
         return;
     case TouchAction::None:
+    case TouchAction::MarkLiftLower:
+    case TouchAction::MarkLiftUpper:
+    case TouchAction::UseSavedLiftLimits:
         return;
     }
 }
@@ -395,8 +476,16 @@ void tick(bool driver) {
     if (service_ui) {
         _g_service_ms = now_ms;
         if (_g_view != View::Calibration) {
-            handle_touch(driver);
+            const Touch touch = poll_touch(_g_view, list_items(), _g_page, _g_retry_save);
+            if (_g_view == View::LiftLimits && touch.action != TouchAction::Home) {
+                tick_lift_limits(now_ms, driver, touch.action);
+                return;
+            }
+            handle_touch(driver, touch);
         }
+    }
+    if (_g_view == View::LiftLimits) {
+        return;
     }
     if (_g_view == View::Calibration) {
         if (service_ui) {
@@ -415,11 +504,6 @@ void tick(bool driver) {
         return;
     }
     if (_g_engine.busy()) {
-#if 0   // 机构手动控制：暂时关闭
-        // ===== 机构手动控制：宏运行期间机构保持停止 =====
-        stop_mechanisms();
-        // ===== 机构手动控制结束 =====
-#endif
         const Input input = _g_engine.recording() ? read_input() : Input{};
         _g_engine.update(pros::millis(), driver && practice_allowed(), input);
         if (_g_engine.state() == State::Complete) {
@@ -439,34 +523,18 @@ void tick(bool driver) {
                !pros::competition::is_autonomous()) {
         const auto input = read_input();
         if (input.connected) {
-            _g_components.apply(map_input(input));
-#if 0       // 机构手动控制：暂时关闭
-            // ===== 机构手动控制：新增代码，按键为占位 =====
-            lift::update((input.buttons & kLiftToggleButton) != 0);
-            if ((input.buttons & kClawOpenButton) != 0) {
-                claw::open();
-            } else if ((input.buttons & kClawCloseButton) != 0) {
-                claw::close();
-            } else {
-                claw::stop();
+            _g_manual_lift_armed |= (input.buttons & kLiftButtons) == 0;
+            auto command = map_input(input);
+            if (!_g_manual_lift_armed) {
+                command.lift_power = 0;
             }
-            // ===== 机构手动控制结束 =====
-#endif
+            _g_components.apply(command);
         } else {
             _g_components.stop();
-#if 0       // 机构手动控制：暂时关闭
-            // ===== 机构手动控制：手柄断开时停止机构 =====
-            stop_mechanisms();
-            // ===== 机构手动控制结束 =====
-#endif
+            _g_manual_lift_armed = false;
         }
     } else {
         _g_components.stop();
-#if 0   // 机构手动控制：暂时关闭
-        // ===== 机构手动控制：离开 Home/宏时停止机构 =====
-        stop_mechanisms();
-        // ===== 机构手动控制结束 =====
-#endif
     }
     if (service_ui) {
         render();
@@ -477,12 +545,7 @@ void tick(bool driver) {
 
 void initialize() {
     chassis::initialize();
-#if 0 // 机构手动控制：暂时关闭
-    // ===== 机构手动控制：初始化机构 =====
-    lift::initialize();
-    claw::initialize();
-    // ===== 机构手动控制结束 =====
-#endif
+    lifting::initialize();
     _g_engine.cancel();
     initialize_screen();
     Feedback feedback{};
@@ -503,11 +566,11 @@ void stop() {
     }
     _g_engine.cancel();
     _g_calibration.interrupt();
-#if 0 // 机构手动控制：暂时关闭
-    // ===== 机构手动控制：模式切换时停止机构 =====
-    stop_mechanisms();
-    // ===== 机构手动控制结束 =====
-#endif
+    _g_manual_lift_armed = false;
+    _g_lift_jog_armed = false;
+    _g_lift_jog_started_ms.reset();
+    _g_lift_lower_deg.reset();
+    _g_lift_status = nullptr;
     if (was_busy) {
         result("MODE CHANGED - OUTPUT ZERO");
     }

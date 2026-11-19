@@ -2,6 +2,7 @@
 
 #include "autonomous/program.hpp"
 #include "autonomous/route.hpp"
+#include "lifting.hpp"
 #include "macro/session.hpp"
 
 void initialize() {
@@ -28,6 +29,7 @@ void competition_initialize() {
 
 void autonomous() {
     macrorec::stop();
+    lifting::load_limits();
     auto_route::run_program();
 }
 
