@@ -235,6 +235,9 @@ void run(const Config &config, std::span<const Step> steps) {
             break;
         }
         stop();
+        if (success && step.minimum_ms > 0) {
+            success = wait(odom, {start_ms, window.step_ms, step.minimum_ms});
+        }
         const auto elapsed_ms = pros::millis() - start_ms;
         std::printf("AUTO %u %s %lu ms\n", step.checkpoint,
                     success && enabled() && elapsed_ms < kStopMs ? "OK" : "STOP",
