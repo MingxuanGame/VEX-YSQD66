@@ -51,7 +51,14 @@ math::Pid heading_pid(const DriveConfig &config, int max_power) {
 }
 
 bool align(Odometry &odom, const DriveConfig &config, Point position, double heading_deg,
-           int max_power, const Window &window) {
+           int max_power, const Window &window, double turn_deg = 0.0) {
+    const bool relative_turn = turn_deg != 0.0;
+    if (relative_turn) {
+        if (!window.active() || !odom.update()) {
+            return false;
+        }
+        heading_deg = odom.pose().heading_deg + turn_deg;
+    }
     auto controller = heading_pid(config, max_power);
     int settled = 0;
     while (window.active()) {
@@ -59,7 +66,10 @@ bool align(Odometry &odom, const DriveConfig &config, Point position, double hea
             distance_in(odom.pose().position, position) > config.tracking_limit_in) {
             return false;
         }
-        const double error_deg = angle_error_deg(heading_deg, odom.pose().heading_deg);
+        // 保留指定转向的方向和行程。常规航向跟踪仍取最短偏差。
+        const double error_deg = relative_turn
+                                     ? heading_deg - odom.pose().heading_deg
+                                     : angle_error_deg(heading_deg, odom.pose().heading_deg);
         if (std::abs(error_deg) <= config.heading_tolerance_deg) {
             chassis::stop();
             if (++settled == 2) {
@@ -227,8 +237,9 @@ void run(const Config &config, std::span<const Step> steps) {
         }
         case Action::turn:
             success = align(odom, config.drive, planned.position, step.heading_deg, step.max_power,
-                            window);
-            planned.heading_deg = step.heading_deg;
+                            window, step.turn_deg);
+            planned.heading_deg =
+                step.turn_deg != 0.0 ? planned.heading_deg + step.turn_deg : step.heading_deg;
             break;
         case Action::dock:
             success = dock(odom, config.drive, step, planned.position, window);
