@@ -1,61 +1,54 @@
 #include "claw.hpp"
 
+#include "pros/adi.hpp"
 #include "pros/misc.hpp"
-#include "pros/motors.hpp"
-
-#include <algorithm>
 
 namespace claw {
 namespace {
 
-// TODO: 占位端口，按实际接线修改。
-constexpr int kClawPort = 8;
-constexpr int kOpenPower = 80;
-constexpr int kClosePower = -80;
+constexpr char kClawPort = 'D';
+constexpr bool kOpenOutput = false;
+constexpr bool kClosedOutput = true;
 
-// 两个蓝色齿轮啮合，一个电机驱动即可；另一个随动。
-pros::Motor _g_claw(kClawPort, pros::MotorGears::blue, pros::MotorUnits::degrees);
+enum class Mode { Driver, Autonomous };
+
+const pros::adi::DigitalOut &solenoid() {
+    static const pros::adi::DigitalOut output(kClawPort, kOpenOutput);
+    return output;
+}
+
+void set_output(bool energized, Mode mode) {
+    // Override 2.1 <R9>：只接收当前启用模式的夹爪指令。
+    if (!pros::competition::is_disabled() &&
+        pros::competition::is_autonomous() == (mode == Mode::Autonomous)) {
+        solenoid().set_value(energized);
+    }
+}
 
 } // namespace
 
 void initialize() {
-    _g_claw.set_brake_mode(pros::MotorBrake::brake);
+    solenoid();
 }
 
 void open() {
-    set_power(kOpenPower);
+    set_output(kOpenOutput, Mode::Driver);
 }
 
 void close() {
-    set_power(kClosePower);
-}
-
-void set_power(int power) {
-    if (pros::competition::is_disabled() || pros::competition::is_autonomous()) {
-        stop();
-        return;
-    }
-    _g_claw.move(std::clamp(power, -127, 127));
-}
-
-void set_autonomous_power(int power) {
-    if (pros::competition::is_disabled() || !pros::competition::is_autonomous()) {
-        stop();
-        return;
-    }
-    _g_claw.move(std::clamp(power, -127, 127));
+    set_output(kClosedOutput, Mode::Driver);
 }
 
 void open_autonomous() {
-    set_autonomous_power(kOpenPower);
+    set_output(kOpenOutput, Mode::Autonomous);
 }
 
 void close_autonomous() {
-    set_autonomous_power(kClosePower);
+    set_output(kClosedOutput, Mode::Autonomous);
 }
 
 void stop() {
-    _g_claw.brake();
+    solenoid().set_value(kOpenOutput);
 }
 
 } // namespace claw

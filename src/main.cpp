@@ -88,8 +88,6 @@ void opcontrol() {
                 claw::open();
             } else if (claw_close && !claw_open) {
                 claw::close();
-            } else {
-                claw::stop();
             }
         } else {
             stop_all();
