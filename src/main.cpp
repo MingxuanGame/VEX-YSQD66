@@ -1,4 +1,7 @@
 #include "main.h"
+
+#include "autonomous/program.hpp"
+#include "autonomous/route.hpp"
 #include "macro/session.hpp"
 
 void initialize() {
@@ -6,6 +9,7 @@ void initialize() {
 }
 
 void disabled() {
+    auto_route::stop();
     macrorec::stop();
     while (pros::competition::is_disabled()) {
         macrorec::idle_tick();
@@ -14,6 +18,7 @@ void disabled() {
 }
 
 void competition_initialize() {
+    auto_route::stop();
     macrorec::stop();
     while (pros::competition::is_disabled()) {
         macrorec::idle_tick();
@@ -21,9 +26,13 @@ void competition_initialize() {
     }
 }
 
-void autonomous() {}
+void autonomous() {
+    macrorec::stop();
+    auto_route::run_program();
+}
 
 void opcontrol() {
+    auto_route::stop();
     macrorec::begin_driver();
     while (true) {
         auto wake_ms = pros::millis();
