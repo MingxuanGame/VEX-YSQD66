@@ -23,14 +23,16 @@ include/
     controller.hpp       手柄抽象基类 io::Controller
     pros_controller.hpp  PROS 手柄适配器工厂声明
   lifting.hpp            双电机升降功率与角度控制
+  toggle.hpp             拉翻色桶机构接口
 src/
   main.cpp               PROS 五个竞赛回调与 20ms 主循环调度
   autons.cpp             autons::run() 与预留 run_red_left/red_down/blue_right/blue_up
   brain_ui.cpp           LVGL 触屏预设按钮
   chassis.cpp            四电机端口 (2,1 / -3,-4)、端口 5 IMU 与 LemLib 底盘参数配置
-  claw.cpp               单气缸夹爪（Brain 三线 D 口数字输出）
+  claw.cpp               单气缸夹爪（Brain 三线 E 口数字输出）
   io/pros_controller.cpp ProsController 继承实现
   lifting.cpp            双电机升降、手动功率与自动角度控制
+  toggle.cpp             拉翻色桶机构（Brain 三线 D 口数字输出）
 static/
   example.txt            LemLib Pure Pursuit 路径资源示例
 ```

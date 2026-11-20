@@ -4,6 +4,7 @@
 #include "brain_ui.hpp"
 #include "chassis.h"
 #include "claw.hpp"
+#include "toggle.hpp"
 #include "io/controller.hpp"
 #include "io/pros_controller.hpp"
 #include "lifting.hpp"
@@ -94,6 +95,12 @@ void opcontrol() {
                 claw::open();
                 claw_hold_last_ms = -1;
                 claw_closed = false;
+            }
+
+            if (controller.digital(io::Digital::Up)) {
+                toggle::up();
+            } else if (controller.digital(io::Digital::Down)) {
+                toggle::down();
             }
         } else {
             stop_all();
