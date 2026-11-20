@@ -9,9 +9,9 @@
 namespace lifting {
 namespace {
 
-// V5 智能电机，绿齿轮 200 rpm。P9 正向、P10 反转。
-pros::Motor _g_motor_9(9, pros::MotorGears::green, pros::MotorUnits::degrees);
-pros::Motor _g_motor_10(-10, pros::MotorGears::green, pros::MotorUnits::degrees);
+// V5 智能电机，红齿轮。P9 正向、P10 反转。
+pros::Motor _g_motor_9(9, pros::MotorGears::red, pros::MotorUnits::degrees);
+pros::Motor _g_motor_10(-10, pros::MotorGears::red, pros::MotorUnits::degrees);
 
 bool enabled_in_mode(bool autonomous) {
     // Override 2.1 <R9>：仅在相应的竞赛模式启用时驱动。
