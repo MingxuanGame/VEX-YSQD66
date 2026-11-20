@@ -56,7 +56,7 @@ void run_red_left() {
     if (!wait_at_point(-42.6F, -18.6F)) {
         return;
     }
-    claw::open_autonomous();
+    claw::open();
     chassis.moveToPoint(-50.6F, -9.9F, 1250, {.forwards = false});
     if (!wait_for_drive()) {
         return;
@@ -67,7 +67,7 @@ void run_red_left() {
     if (!wait_at_point(-24.3F, -16.8F)) {
         return;
     }
-    claw::close_autonomous();
+    claw::close();
 
     // 底盘异步驶向 Neutral Goal。升降恢复时在行进中抬升，两者都到位后再松开。
     chassis.moveToPoint(-46.1F, 21.8F, 2800);
@@ -81,7 +81,7 @@ void run_red_left() {
         return;
     }
     // 放下黄 Pin
-    claw::open_autonomous();
+    claw::open();
 
     // 倒车进入中央公共区域并对准 Toggle，随后停车。
     chassis.moveToPose(-21.0F, -1.9F, 271.77F, 2700, {.forwards = false});
