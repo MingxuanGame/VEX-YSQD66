@@ -1,6 +1,7 @@
 #include "brain_ui.hpp"
 
 #include "liblvgl/lvgl.h"
+#include "lifting.hpp"
 #include "pros/rtos.hpp"
 
 #include <array>
@@ -8,11 +9,18 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
+#include <optional>
+
+extern "C" {
+LV_FONT_DECLARE(brain_menu_font);
+}
 
 namespace brain_ui {
 namespace {
 
 constexpr std::size_t kPresetCount = static_cast<std::size_t>(AutonPreset::Count);
+constexpr std::uint32_t kReadoutRefreshMs = 100;
 
 struct PresetMeta {
     const char *short_label;
@@ -73,6 +81,33 @@ lv_obj_t *make_label(lv_obj_t *parent, int32_t x, int32_t y, std::uint32_t color
     return label;
 }
 
+std::array<char, 24> format_angle(std::optional<double> angle_deg) {
+    std::array<char, 24> text{"--"};
+    if (angle_deg) {
+        // 镜像端口的零位可能返回 -0.0，两列统一显示 +0.0。
+        const double display_deg = *angle_deg == 0.0 ? 0.0 : *angle_deg;
+        std::snprintf(text.data(), text.size(), "%+.1f", display_deg);
+    }
+    return text;
+}
+
+void set_text_if_changed(lv_obj_t *label, const char *text) {
+    if (std::strcmp(lv_label_get_text(label), text) != 0) {
+        lv_label_set_text(label, text);
+    }
+}
+
+void refresh_lift_angles(lv_timer_t *timer) {
+    auto *label = static_cast<lv_obj_t *>(lv_timer_get_user_data(timer));
+    const auto angles = lifting::motor_angles();
+    const auto port_9 = format_angle(angles.port_9_deg);
+    const auto port_10 = format_angle(angles.port_10_deg);
+    std::array<char, 64> text{};
+    std::snprintf(text.data(), text.size(), "P9 / P10  {%s, %s} deg", port_9.data(),
+                  port_10.data());
+    set_text_if_changed(label, text.data());
+}
+
 void apply_auton_selection_styles() {
     const auto active = static_cast<std::size_t>(selected_auton());
     std::array<char, 40> header{};
@@ -112,12 +147,20 @@ void initialize() {
 
     constexpr int32_t kAutonW = 109;
     constexpr int32_t kAutonGap = 8;
+    constexpr int32_t kAutonY = 26;
+    constexpr int32_t kAutonH = 48;
     for (std::size_t i = 0; i < kPresetCount; ++i) {
         const int32_t x = 10 + static_cast<int32_t>(i) * (kAutonW + kAutonGap);
         _g_auton_buttons[i] =
-            make_button(screen, x, 26, kAutonW, 48, 0x23313D, kPresets[i].short_label,
+            make_button(screen, x, kAutonY, kAutonW, kAutonH, 0x23313D, kPresets[i].short_label,
                         on_auton_clicked, reinterpret_cast<void *>(static_cast<std::uintptr_t>(i)));
     }
+
+    constexpr int32_t kLiftY = kAutonY + kAutonH + 4;
+    make_label(screen, 10, kLiftY, 0xFFFFFF, &brain_menu_font, "升降");
+    auto *lift_angles =
+        make_label(screen, 52, kLiftY, 0xFFFFFF, &lv_font_montserrat_16, "P9 / P10  {--, --} deg");
+    lv_timer_create(refresh_lift_angles, kReadoutRefreshMs, lift_angles);
 
     apply_auton_selection_styles();
     lv_unlock();
