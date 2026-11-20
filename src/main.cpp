@@ -4,6 +4,7 @@
 #include "brain_ui.hpp"
 #include "chassis.h"
 #include "claw.hpp"
+#include "io/controller.hpp"
 #include "io/pros_controller.hpp"
 #include "lifting.hpp"
 
@@ -53,6 +54,9 @@ void autonomous() {
 void opcontrol() {
     stop_all();
     bool manual_lift_armed = false;
+    int claw_hold_last_ms = -1;
+    bool claw_button_holded = false;
+    bool claw_opened = false;
 
     while (true) {
         auto wake_ms = pros::millis();
@@ -64,21 +68,33 @@ void opcontrol() {
             const int turn = controller.analog(io::Analog::RightX);
             chassis::arcade(throttle, turn);
 
-            const bool lift_up = controller.digital(io::Digital::L2);
-            const bool lift_down = controller.digital(io::Digital::L1);
+            const bool lift_up = controller.digital(io::Digital::L1);
+            const bool lift_down = controller.digital(io::Digital::L2);
             manual_lift_armed |= (!lift_up && !lift_down);
             const int lift_cmd =
                 manual_lift_armed
-                    ? kLiftPower * (static_cast<int>(lift_up) - static_cast<int>(lift_down))
+                    ? kLiftPower * (static_cast<int>(lift_down) - static_cast<int>(lift_up))
                     : 0;
             lifting::set_power(lift_cmd);
 
-            const bool claw_open = controller.digital(io::Digital::R1);
-            const bool claw_close = controller.digital(io::Digital::R2);
-            if (claw_open && !claw_close) {
-                claw::open();
-            } else if (claw_close && !claw_open) {
+            if (controller.digital(io::Digital::R1)) {
+                if (claw_opened) {
+                    claw_hold_last_ms = pros::millis();
+                }
+                if (claw_hold_last_ms == -1) {
+                    claw_hold_last_ms = pros::millis();
+                }
+
+                if (pros::millis() - claw_hold_last_ms >= 50) {
+                    claw::open();
+                    claw_opened = true;
+                }
+            }
+            if (claw_opened && !controller.digital(io::Digital::R1) &&
+                pros::millis() - claw_hold_last_ms >= 50) {
                 claw::close();
+                claw_hold_last_ms = -1;
+                claw_opened = false;
             }
         } else {
             stop_all();
