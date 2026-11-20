@@ -55,8 +55,7 @@ void opcontrol() {
     stop_all();
     bool manual_lift_armed = false;
     int claw_hold_last_ms = -1;
-    bool claw_button_holded = false;
-    bool claw_opened = false;
+    bool claw_closed = false;
 
     while (true) {
         auto wake_ms = pros::millis();
@@ -78,7 +77,7 @@ void opcontrol() {
             lifting::set_power(lift_cmd);
 
             if (controller.digital(io::Digital::R1)) {
-                if (claw_opened) {
+                if (claw_closed) {
                     claw_hold_last_ms = pros::millis();
                 }
                 if (claw_hold_last_ms == -1) {
@@ -86,15 +85,15 @@ void opcontrol() {
                 }
 
                 if (pros::millis() - claw_hold_last_ms >= 50) {
-                    claw::open();
-                    claw_opened = true;
+                    claw::close();
+                    claw_closed = true;
                 }
             }
-            if (claw_opened && !controller.digital(io::Digital::R1) &&
+            if (claw_closed && !controller.digital(io::Digital::R1) &&
                 pros::millis() - claw_hold_last_ms >= 50) {
-                claw::close();
+                claw::open();
                 claw_hold_last_ms = -1;
-                claw_opened = false;
+                claw_closed = false;
             }
         } else {
             stop_all();
