@@ -5,6 +5,7 @@
 #include "pros/misc.hpp"
 #include "pros/motor_group.hpp"
 
+#include <cmath>
 #include <cstdint>
 
 namespace chassis {
@@ -96,6 +97,11 @@ lemlib::Chassis &controller() {
 
 lemlib::Pose pose() {
     return _g_chassis.getPose();
+}
+
+std::optional<double> imu_rotation_deg() {
+    const double rotation_deg = _g_imu.get_rotation();
+    return std::isfinite(rotation_deg) ? std::optional{rotation_deg} : std::nullopt;
 }
 
 } // namespace chassis

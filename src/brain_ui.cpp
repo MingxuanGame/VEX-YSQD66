@@ -1,11 +1,13 @@
 #include "brain_ui.hpp"
 
+#include "chassis.h"
 #include "liblvgl/lvgl.h"
 #include "lifting.hpp"
 #include "pros/rtos.hpp"
 
 #include <array>
 #include <atomic>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -21,6 +23,7 @@ namespace {
 
 constexpr std::size_t kPresetCount = static_cast<std::size_t>(AutonPreset::Count);
 constexpr std::uint32_t kReadoutRefreshMs = 100;
+constexpr char kPoseUnavailable[] = "Pose  X -- in   Y -- in   Theta -- deg";
 
 struct PresetMeta {
     const char *short_label;
@@ -108,6 +111,23 @@ void refresh_lift_angles(lv_timer_t *timer) {
     set_text_if_changed(label, text.data());
 }
 
+void refresh_chassis_readout(lv_timer_t *timer) {
+    auto *label = static_cast<lv_obj_t *>(lv_timer_get_user_data(timer));
+    const auto rotation = format_angle(chassis::imu_rotation_deg());
+    const auto pose = chassis::pose();
+    std::array<char, 96> pose_text{};
+    if (std::isfinite(pose.x) && std::isfinite(pose.y) && std::isfinite(pose.theta)) {
+        std::snprintf(pose_text.data(), pose_text.size(),
+                      "Pose  X %+.2f in   Y %+.2f in   Theta %+.2f deg", pose.x, pose.y,
+                      pose.theta);
+    }
+
+    std::array<char, 160> text{};
+    std::snprintf(text.data(), text.size(), "IMU rotation  %s deg\n%s", rotation.data(),
+                  pose_text.front() ? pose_text.data() : kPoseUnavailable);
+    set_text_if_changed(label, text.data());
+}
+
 void apply_auton_selection_styles() {
     const auto active = static_cast<std::size_t>(selected_auton());
     std::array<char, 40> header{};
@@ -161,6 +181,11 @@ void initialize() {
     auto *lift_angles =
         make_label(screen, 52, kLiftY, 0xFFFFFF, &lv_font_montserrat_16, "P9 / P10  {--, --} deg");
     lv_timer_create(refresh_lift_angles, kReadoutRefreshMs, lift_angles);
+
+    auto *chassis_readout =
+        make_label(screen, 10, kLiftY + 24, 0xFFFFFF, &lv_font_montserrat_16,
+                   "IMU rotation  -- deg\nPose  X -- in   Y -- in   Theta -- deg");
+    lv_timer_create(refresh_chassis_readout, kReadoutRefreshMs, chassis_readout);
 
     apply_auton_selection_styles();
     lv_unlock();

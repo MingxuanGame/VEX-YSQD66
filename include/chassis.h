@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include "lemlib/chassis/chassis.hpp"
 #include "lemlib/pose.hpp"
 #include "pros/motors.h"
@@ -23,5 +25,8 @@ lemlib::Chassis &controller();
 
 // 获取当前里程计位姿（x/y 单位英寸，theta 单位度）。
 lemlib::Pose pose();
+
+// 读取 IMU 累计转角（度，顺时针为正）；校准中或读取失败时返回空值。
+std::optional<double> imu_rotation_deg();
 
 } // namespace chassis
