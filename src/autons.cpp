@@ -9,8 +9,9 @@
 #include "pros/misc.hpp"
 #include "pros/rtos.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
-#include <optional>
 
 // 在 static/ 放入 JerryIO / LemLib Path Planner 导出的路径文本后取消注释：
 // ASSET(example_txt);
@@ -22,12 +23,7 @@ void run_red_left() {
     // Override 2.1 第 18 页：对抗赛自动时段为 15 秒，预留停车时间。
     constexpr std::uint32_t kRouteBudgetMs = 14500;
     constexpr std::uint32_t kPollMs = 10;
-    // 等待实车测量各段升降时间。三段均配置后才运行该路线。
-    constexpr std::optional<std::uint32_t> kFirstLowerMs;
-    constexpr std::optional<std::uint32_t> kPickupRaiseMs;
-    constexpr std::optional<std::uint32_t> kFinalLowerMs;
-    constexpr std::uint32_t kClawTravelMs = 250;
-    constexpr int kLiftMaxPower = 80;
+    constexpr float kPlacementToleranceIn = 3.0F; // 沿用底盘位置环的大误差范围。
 
     lemlib::Timer route_timer(kRouteBudgetMs);
     const auto can_run = [&] {
@@ -35,70 +31,60 @@ void run_red_left() {
         return !pros::competition::is_disabled() && pros::competition::is_autonomous() &&
                !route_timer.isDone();
     };
-    if (!can_run() || !kFirstLowerMs || !kPickupRaiseMs || !kFinalLowerMs) {
+    if (!can_run()) {
         return;
     }
 
     auto &chassis = chassis::controller();
-    // LemLib 默认异步执行。每段结束后再下发下一段或操作机构。
     const auto wait_for_drive = [&] {
         while (can_run() && chassis.isInMotion()) {
             pros::delay(kPollMs);
         }
         return can_run();
     };
-    const auto move_lift_and_claw = [&](int power, std::uint32_t duration_ms,
-                                        void (*actuate_claw)()) {
-        if (duration_ms > route_timer.getTimeLeft() || !lifting::move_for(power, duration_ms) ||
-            !can_run()) {
+    const auto wait_at_point = [&](float x_in, float y_in) {
+        if (!wait_for_drive()) {
             return false;
         }
-        actuate_claw();
-        // 让气缸走完行程；夹紧状态需保持到放置点。
-        lemlib::Timer travel(kClawTravelMs);
-        while (can_run() && !travel.isDone()) {
-            pros::delay(kPollMs);
-        }
-        return can_run();
+        const auto pose = chassis.getPose();
+        return std::hypot(pose.x - x_in, pose.y - y_in) <= kPlacementToleranceIn;
     };
 
-    chassis.setPose(-60.4F, 7.7F, 90.0F);
-
-    chassis.moveToPoint(-49.9F, -13.4F, 1650); // Red Goal
-    if (!wait_for_drive() ||
-        !move_lift_and_claw(-kLiftMaxPower, *kFirstLowerMs, claw::open_autonomous)) {
+    chassis.setPose(-62.5F, 6.3F, 90.0F);
+    // 驶向 Red Goal，到点松开夹爪放下 Pin，再倒车退出。
+    chassis.moveToPoint(-42.6F, -18.6F, 2200);
+    if (!wait_at_point(-42.6F, -18.6F)) {
         return;
     }
-    chassis.moveToPoint(-54.2F, -5.8F, 1000, {.forwards = false}); // 倒出 Red Goal
+    claw::open_autonomous();
+    chassis.moveToPoint(-50.6F, -9.9F, 1250, {.forwards = false});
     if (!wait_for_drive()) {
         return;
     }
 
-    chassis.turnToPoint(-38.2F, -14.9F, 950); // 转向外侧 Cup + Pin
-    if (!wait_for_drive()) {
+    // 驶向分界线外侧的黄 Pin，到点夹紧后再驶向 Neutral Goal。
+    chassis.moveToPoint(-24.3F, -16.8F, 1950);
+    if (!wait_at_point(-24.3F, -16.8F)) {
         return;
     }
-    chassis.moveToPoint(-31.3F, -19.9F, 1700);
-    if (!wait_for_drive() ||
-        !move_lift_and_claw(kLiftMaxPower, *kPickupRaiseMs, claw::close_autonomous)) {
-        return;
-    }
+    claw::close_autonomous();
 
-    chassis.turnToHeading(120.63F, 700);
-    if (!wait_for_drive()) {
+    // 底盘异步驶向 Neutral Goal。升降恢复时在行进中抬升，两者都到位后再松开。
+    chassis.moveToPoint(-46.1F, 21.8F, 2800);
+    // constexpr std::uint32_t kLiftTimeoutMs = 4000;
+    // constexpr std::int32_t kLiftMaxVelocityRpm = 100; // 带载待实车验证。
+    // if (!lifting::move_to({lifting::kUpperLimitDeg, lifting::kUpperLimitDeg}, kLiftMaxVelocityRpm,
+    //                       std::min(kLiftTimeoutMs, route_timer.getTimeLeft()))) {
+    //     return;
+    // }
+    if (!wait_at_point(-46.1F, 21.8F)) {
         return;
     }
-    chassis.moveToPoint(-44.8F, 12.9F, 2100);
-    if (!wait_for_drive() ||
-        !move_lift_and_claw(-kLiftMaxPower, *kFinalLowerMs, claw::open_autonomous)) {
-        return;
-    }
-    chassis.moveToPoint(-36.5F, 9.5F, 1050, {.forwards = false});
-    if (!wait_for_drive()) {
-        return;
-    }
+    // 放下黄 Pin
+    claw::open_autonomous();
 
-    chassis.moveToPose(-59.6F, 18.6F, 302.77F, 1900);
+    // 倒车进入中央公共区域并对准 Toggle，随后停车。
+    chassis.moveToPose(-21.0F, -1.9F, 271.77F, 2700, {.forwards = false});
     wait_for_drive();
 }
 
@@ -126,7 +112,8 @@ void run_blue_up() {
 } // namespace
 
 void run() {
-    switch (brain_ui::selected_auton()) {
+    const auto preset = brain_ui::selected_auton();
+    switch (preset) {
     case brain_ui::AutonPreset::RedLeft:
         run_red_left();
         break;
@@ -144,8 +131,6 @@ void run() {
     }
 
     chassis::stop();
-    lifting::stop();
-    claw::stop();
 }
 
 } // namespace autons

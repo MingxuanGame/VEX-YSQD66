@@ -12,10 +12,18 @@ namespace {
 
 constexpr std::uint32_t kPositionPollMs = 20;
 constexpr double kPositionToleranceDeg = 3.0; // 初值，待实机标定。
+// 留出减速距离，初值沿用原升降限位设置，待实机复核。
+constexpr double kSlowZoneDeg = 45.0;
+constexpr int kNearLimitPower = 20;
 
 // V5 智能电机，红齿轮。P9 正向、P10 反转。
 pros::Motor _g_motor_9(9, pros::MotorGears::red, pros::MotorUnits::degrees);
 pros::Motor _g_motor_10(-10, pros::MotorGears::red, pros::MotorUnits::degrees);
+bool _g_reference_ready = false;
+
+bool initialize_motor(const pros::Motor &motor) {
+    return motor.set_brake_mode(pros::MotorBrake::hold) == 1 && motor.tare_position() == 1;
+}
 
 std::optional<double> read_angle_deg(const pros::Motor &motor) {
     const double angle_deg = motor.get_position();
@@ -27,22 +35,50 @@ bool enabled_in_mode(bool autonomous) {
     return !pros::competition::is_disabled() && pros::competition::is_autonomous() == autonomous;
 }
 
-int apply_power(int power) {
-    power = std::clamp(power, -127, 127);
-    if (power != 0 && _g_motor_9.move(power) == 1 && _g_motor_10.move(power) == 1) {
+int limit_power(int power) {
+    if (!_g_reference_ready || power == 0) {
+        return 0;
+    }
+    const auto angles = motor_angles();
+    if (!angles.port_9_deg || !angles.port_10_deg) {
+        return 0;
+    }
+    const double remaining_deg =
+        power > 0 ? kLowerLimitDeg - std::max(*angles.port_9_deg, *angles.port_10_deg)
+                  : std::min(*angles.port_9_deg, *angles.port_10_deg) - kUpperLimitDeg;
+    if (remaining_deg <= 0.0) {
+        return 0;
+    }
+    const int max_power = remaining_deg <= kSlowZoneDeg ? kNearLimitPower : 127;
+    return std::clamp(power, -max_power, max_power);
+}
+
+int apply_power(int power, bool autonomous) {
+    power = limit_power(power);
+    if (power != 0 && enabled_in_mode(autonomous) && _g_motor_9.move(power) == 1 &&
+        _g_motor_10.move(power) == 1) {
         return power;
     }
     stop();
     return 0;
 }
 
+bool within_limits(double angle_deg) {
+    return angle_deg >= kUpperLimitDeg && angle_deg <= kLowerLimitDeg;
+}
+
+bool beyond_travel(double angle_deg, double initial_deg) {
+    // 允许由限位外向范围内退回，不能继续向外走。
+    return angle_deg < std::min(kUpperLimitDeg, initial_deg) ||
+           angle_deg > std::max(kLowerLimitDeg, initial_deg);
+}
+
 } // namespace
 
 void initialize() {
-    _g_motor_9.set_brake_mode(pros::MotorBrake::hold);
-    _g_motor_10.set_brake_mode(pros::MotorBrake::hold);
-    _g_motor_9.tare_position();
-    _g_motor_10.tare_position();
+    const bool port_9_ready = initialize_motor(_g_motor_9);
+    const bool port_10_ready = initialize_motor(_g_motor_10);
+    _g_reference_ready = port_9_ready && port_10_ready;
 }
 
 MotorAngles motor_angles() {
@@ -50,25 +86,24 @@ MotorAngles motor_angles() {
 }
 
 int set_power(int power) {
-    return apply_power(enabled_in_mode(false) ? power : 0);
+    return apply_power(power, false);
 }
 
 bool move_for(int power, std::uint32_t duration_ms) {
     const auto start_ms = pros::millis();
     for (auto elapsed_ms = 0U; elapsed_ms < duration_ms; elapsed_ms = pros::millis() - start_ms) {
-        if (!enabled_in_mode(true) || apply_power(power) == 0) {
-            stop();
+        if (apply_power(power, true) == 0) {
             return false;
         }
-        pros::delay(std::min<std::uint32_t>(20, duration_ms - elapsed_ms));
+        pros::delay(std::min(kPositionPollMs, duration_ms - elapsed_ms));
     }
     stop();
     return enabled_in_mode(true);
 }
 
 bool move_to(TargetAngles target_deg, std::int32_t max_velocity_rpm, std::uint32_t timeout_ms) {
-    if (!enabled_in_mode(true) || timeout_ms == 0 || max_velocity_rpm <= 0 ||
-        !std::isfinite(target_deg.port_9_deg) || !std::isfinite(target_deg.port_10_deg)) {
+    if (!_g_reference_ready || !enabled_in_mode(true) || timeout_ms == 0 || max_velocity_rpm <= 0 ||
+        !within_limits(target_deg.port_9_deg) || !within_limits(target_deg.port_10_deg)) {
         return false;
     }
 
@@ -87,10 +122,13 @@ bool move_to(TargetAngles target_deg, std::int32_t max_velocity_rpm, std::uint32
             break;
         }
         const auto position = motor_angles();
-        if (!position.port_9_deg || !position.port_10_deg) {
+        if (!position.port_9_deg || !position.port_10_deg ||
+            beyond_travel(*position.port_9_deg, *initial.port_9_deg) ||
+            beyond_travel(*position.port_10_deg, *initial.port_10_deg)) {
             break;
         }
-        if (std::abs(*position.port_9_deg - target_deg.port_9_deg) <= kPositionToleranceDeg &&
+        if (within_limits(*position.port_9_deg) && within_limits(*position.port_10_deg) &&
+            std::abs(*position.port_9_deg - target_deg.port_9_deg) <= kPositionToleranceDeg &&
             std::abs(*position.port_10_deg - target_deg.port_10_deg) <= kPositionToleranceDeg) {
             stop();
             return enabled_in_mode(true);
