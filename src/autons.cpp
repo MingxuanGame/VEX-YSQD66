@@ -132,6 +132,7 @@ void run_blue_right_2(bool) {}
 void run_blue_up_2(bool) {}
 
 void run_impl(bool allow_driver) {
+    claw::unlock_startup();
     const auto preset = brain_ui::selected_auton();
     const bool plan_2 = brain_ui::selected_plan() == brain_ui::AutonPlan::Plan2;
     switch (preset) {
@@ -160,7 +161,6 @@ void run() {
     if (!pros::competition::is_autonomous() || pros::competition::is_disabled()) {
         return;
     }
-    claw::unlock_startup();
     run_impl(false);
 }
 
