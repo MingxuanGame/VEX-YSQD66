@@ -19,7 +19,7 @@
 namespace autons {
 namespace {
 
-void run_red_left() {
+void run_red_left(bool allow_driver) {
     // Override 2.1 第 18 页：对抗赛自动时段为 15 秒，预留停车时间。
     constexpr std::uint32_t kRouteBudgetMs = 14500;
     constexpr std::uint32_t kPollMs = 10;
@@ -27,9 +27,10 @@ void run_red_left() {
 
     lemlib::Timer route_timer(kRouteBudgetMs);
     const auto can_run = [&] {
-        // Override 2.1 <R9>：仅在自动模式启用时继续动作。
-        return !pros::competition::is_disabled() && pros::competition::is_autonomous() &&
-               !route_timer.isDone();
+        // Override 2.1 <R9>：禁用或切换阶段后立即停止动作。
+        // allow_driver 供手动阶段的按 A 入口运行同一条路线。
+        return !pros::competition::is_disabled() &&
+               (allow_driver || pros::competition::is_autonomous()) && !route_timer.isDone();
     };
     if (!can_run()) {
         return;
@@ -50,42 +51,35 @@ void run_red_left() {
         return std::hypot(pose.x - x_in, pose.y - y_in) <= kPlacementToleranceIn;
     };
 
-    chassis.setPose(-62.5F, 6.3F, 90.0F);
-    // 驶向 Red Goal，到点松开夹爪放下 Pin，再倒车退出。
-    chassis.moveToPoint(-42.6F, -18.6F, 2200);
-    if (!wait_at_point(-42.6F, -18.6F)) {
+    chassis.setPose(-62.5F, -7.5F, 90.0F);
+    // 驶向 Red Goal，撞上得分座后松开夹爪放下 Pin，再倒车退出。
+    chassis.moveToPoint(-39.2F, -17.5F, 1900);
+    if (!wait_at_point(-39.2F, -17.5F)) {
         return;
     }
     claw::open();
-    chassis.moveToPoint(-50.6F, -9.9F, 1250, {.forwards = false});
+    chassis.moveToPoint(-46.5F, -13.9F, 1050, {.forwards = false});
     if (!wait_for_drive()) {
         return;
     }
 
-    // 驶向分界线外侧的黄 Pin，到点夹紧后再驶向 Neutral Goal。
-    chassis.moveToPoint(-24.3F, -16.8F, 1950);
-    if (!wait_at_point(-24.3F, -16.8F)) {
+    // 驶向分界线外侧的黄 Pin，到点夹紧后再运往 Neutral Goal。
+    chassis.moveToPose(-23.0F, -16.6F, 116.05F, 1650);
+    if (!wait_at_point(-23.0F, -16.6F)) {
         return;
     }
     claw::close();
 
-    // 底盘异步驶向 Neutral Goal。升降恢复时在行进中抬升，两者都到位后再松开。
-    chassis.moveToPoint(-46.1F, 21.8F, 2800);
-    // constexpr std::uint32_t kLiftTimeoutMs = 4000;
-    // constexpr std::int32_t kLiftMaxVelocityRpm = 100; // 带载待实车验证。
-    // if (!lifting::move_to({lifting::kUpperLimitDeg, lifting::kUpperLimitDeg}, kLiftMaxVelocityRpm,
-    //                       std::min(kLiftTimeoutMs, route_timer.getTimeLeft()))) {
-    //     return;
-    // }
-    if (!wait_at_point(-46.1F, 21.8F)) {
-        return;
+    // 底盘异步驶向 Neutral Goal。升降恢复时在行进中抬升，两者都到位后再放下。
+    chassis.moveToPose(-37.8F, 19.2F, -60.45F, 3500);
+    constexpr std::uint32_t kLiftTimeoutMs = 4000;
+    constexpr std::int32_t kLiftMaxVelocityRpm = 100; // 带载待实车验证。
+    if (!lifting::move_to({850,850}, kLiftMaxVelocityRpm,
+                          std::min(kLiftTimeoutMs, route_timer.getTimeLeft()))) {
+        wait_at_point(-37.8F, 19.2F);
     }
     // 放下黄 Pin
     claw::open();
-
-    // 倒车进入中央公共区域并对准 Toggle，随后停车。
-    chassis.moveToPose(-21.0F, -1.9F, 271.77F, 2700, {.forwards = false});
-    wait_for_drive();
 }
 
 void run_red_down() {
@@ -109,13 +103,11 @@ void run_blue_up() {
     // 预留：蓝方上路线（在此组装 LemLib Path Planner 路径与 C++ Custom 升降/夹爪代码）
 }
 
-} // namespace
-
-void run() {
+void run_impl(bool allow_driver) {
     const auto preset = brain_ui::selected_auton();
     switch (preset) {
     case brain_ui::AutonPreset::RedLeft:
-        run_red_left();
+        run_red_left(allow_driver);
         break;
     case brain_ui::AutonPreset::RedDown:
         run_red_down();
@@ -131,6 +123,16 @@ void run() {
     }
 
     chassis::stop();
+}
+
+} // namespace
+
+void run() {
+    run_impl(false);
+}
+
+void run_in_driver() {
+    run_impl(true);
 }
 
 } // namespace autons

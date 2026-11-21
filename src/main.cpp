@@ -57,6 +57,7 @@ void opcontrol() {
     bool manual_lift_armed = false;
     int claw_hold_last_ms = -1;
     bool claw_closed = false;
+    bool auto_start_held = false;
 
     while (true) {
         auto wake_ms = pros::millis();
@@ -102,9 +103,19 @@ void opcontrol() {
             } else if (controller.digital(io::Digital::Down)) {
                 toggle::down();
             }
+
+            // 按 A 运行一次所选自动路线；返回后继续手动控制，仅按下沿触发避免重复启动。
+            const bool auto_start = controller.digital(io::Digital::A);
+            if (auto_start && !auto_start_held) {
+                stop_all();
+                autons::run_in_driver();
+                stop_all();
+            }
+            auto_start_held = auto_start;
         } else {
             stop_all();
             manual_lift_armed = false;
+            auto_start_held = false;
         }
 
         if (pros::millis() - wake_ms >= kDriverPeriodMs) {
