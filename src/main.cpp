@@ -104,6 +104,10 @@ void opcontrol() {
             } else if (controller.digital(io::Digital::Down)) {
                 toggle::down();
             }
+
+            if (controller.digital(io::Digital::B)) {
+                lifting::move_to({0, 0}, 127, 5000);
+            }
         } else {
             stop_all();
             manual_lift_armed = false;

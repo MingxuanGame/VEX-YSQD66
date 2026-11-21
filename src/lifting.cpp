@@ -17,8 +17,8 @@ constexpr double kSlowZoneDeg = 45.0;
 constexpr int kNearLimitPower = 20;
 
 // V5 智能电机，红齿轮。P9 正向、P10 反转。
-pros::Motor _g_motor_9(9, pros::MotorGears::red, pros::MotorUnits::degrees);
-pros::Motor _g_motor_10(-10, pros::MotorGears::red, pros::MotorUnits::degrees);
+pros::Motor _g_motor_9(9, pros::MotorGears::green, pros::MotorUnits::degrees);
+pros::Motor _g_motor_10(-10, pros::MotorGears::green, pros::MotorUnits::degrees);
 bool _g_reference_ready = false;
 
 bool initialize_motor(const pros::Motor &motor) {
