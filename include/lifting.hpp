@@ -31,9 +31,11 @@ int set_power(int power);
 // 自动模式下按功率运行指定毫秒数，触及限位或中断时刹车并返回 false。
 bool move_for(int power, std::uint32_t duration_ms);
 
-// 自动模式下按屏幕的 P9、P10 顺序接收绝对角度（度），以正转速上限（rpm）运行。
+// 按屏幕的 P9、P10 顺序接收绝对角度（度），以正转速上限（rpm）运行。
+// allow_driver 为 true 时允许在手动阶段执行，供 opcontrol 里的按 A 自动路线入口调用。
 // 拒绝越界目标；阻塞等待双电机到位，超时（ms）、读数异常、越界或退出时刹车。
-bool move_to(TargetAngles target_deg, std::int32_t max_velocity_rpm, std::uint32_t timeout_ms);
+bool move_to(TargetAngles target_deg, std::int32_t max_velocity_rpm, std::uint32_t timeout_ms,
+             bool allow_driver);
 
 // 刹车并保持当前位置。
 void stop();

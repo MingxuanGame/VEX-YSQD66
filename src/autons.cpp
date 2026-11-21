@@ -20,8 +20,8 @@ namespace autons {
 namespace {
 
 void run_red_left(bool allow_driver) {
-    // Override 2.1 第 18 页：对抗赛自动时段为 15 秒，预留停车时间。
-    constexpr std::uint32_t kRouteBudgetMs = 14500;
+    // Override 2.1 第 18 页：对抗赛自动时段为 15 秒；路线最多运行 14.9 秒，留 100 ms 停车余量。
+    constexpr std::uint32_t kRouteBudgetMs = 14900;
     constexpr std::uint32_t kPollMs = 10;
     constexpr float kPlacementToleranceIn = 3.0F; // 沿用底盘位置环的大误差范围。
 
@@ -52,34 +52,49 @@ void run_red_left(bool allow_driver) {
     };
 
     chassis.setPose(-62.5F, -7.5F, 90.0F);
+    // 先退到左侧再用后臂推翻己方 Toggle；推住时不一定能到点，只等运动结束。
+    chassis.moveToPoint(-50.0F, -7.5F, 1000);
+    if (!wait_for_drive()) {
+        return;
+    }
+    chassis.moveToPoint(-67.0F, -7.5F, 1050, {.forwards = false});
+    if (!wait_for_drive()) {
+        return;
+    }
+
     // 驶向 Red Goal，撞上得分座后松开夹爪放下 Pin，再倒车退出。
-    chassis.moveToPoint(-39.2F, -17.5F, 1900);
-    if (!wait_at_point(-39.2F, -17.5F)) {
+    chassis.moveToPose(-53.3F, -13.8F, 150.0F, 1650);
+    if (!wait_at_point(-53.3F, -13.8F)) {
         return;
     }
     claw::open();
-    chassis.moveToPoint(-46.5F, -13.9F, 1050, {.forwards = false});
+    chassis.moveToPose(-60.0F, -8.0F, 95.0F, 1200, {.forwards = false, .lead = 0.2F});
     if (!wait_for_drive()) {
         return;
     }
 
     // 驶向分界线外侧的黄 Pin，到点夹紧后再运往 Neutral Goal。
-    chassis.moveToPose(-23.0F, -16.6F, 116.05F, 1650);
-    if (!wait_at_point(-23.0F, -16.6F)) {
+    chassis.moveToPose(-32.3F, -18.5F, 120.0F, 2400);
+    if (!wait_at_point(-32.3F, -18.5F)) {
         return;
     }
     claw::close();
 
-    // 底盘异步驶向 Neutral Goal。升降恢复时在行进中抬升，两者都到位后再放下。
-    chassis.moveToPose(-37.8F, 19.2F, -60.45F, 3500);
+    // 底盘异步驶向 Neutral Goal。升降在途中抬升，两者都到位后再放下黄 Pin。
+    chassis.moveToPose(-44.2F, 13.8F, -20.0F, 3050, {.lead = 0.2F});
     constexpr std::uint32_t kLiftTimeoutMs = 4000;
     constexpr std::int32_t kLiftMaxVelocityRpm = 100; // 带载待实车验证。
-    if (!lifting::move_to({850,850}, kLiftMaxVelocityRpm,
-                          std::min(kLiftTimeoutMs, route_timer.getTimeLeft()))) {
-        wait_at_point(-37.8F, 19.2F);
+    lifting::move_to({850, 850}, kLiftMaxVelocityRpm,
+                     std::min(kLiftTimeoutMs, route_timer.getTimeLeft()), allow_driver);
+    if (!wait_at_point(-44.2F, 13.8F)) {
+        return;
     }
     // 放下黄 Pin
     claw::open();
+
+    // 倒车离开 Neutral Goal，给手动阶段留出空间。
+    chassis.moveToPose(-43.8F, -0.3F, 0.0F, 900, {.forwards = false, .lead = 0.2F});
+    wait_for_drive();
 }
 
 void run_red_down() {

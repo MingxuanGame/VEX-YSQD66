@@ -35,6 +35,13 @@ bool enabled_in_mode(bool autonomous) {
     return !pros::competition::is_disabled() && pros::competition::is_autonomous() == autonomous;
 }
 
+// move_to 由自动路线调用。现场不接场控时自动路线在 opcontrol 的按 A 入口里运行，
+// allow_driver 为 true 时允许手动阶段执行；任何情况下都不在禁用状态驱动。
+bool move_to_allowed(bool allow_driver) {
+    return !pros::competition::is_disabled() &&
+           (allow_driver || pros::competition::is_autonomous());
+}
+
 int limit_power(int power) {
     if (!_g_reference_ready || power == 0) {
         return 0;
@@ -101,7 +108,8 @@ bool move_for(int power, std::uint32_t duration_ms) {
     return enabled_in_mode(true);
 }
 
-bool move_to(TargetAngles target_deg, std::int32_t max_velocity_rpm, std::uint32_t timeout_ms) {
+bool move_to(TargetAngles target_deg, std::int32_t max_velocity_rpm, std::uint32_t timeout_ms,
+             bool allow_driver) {
     if (!_g_reference_ready || timeout_ms == 0 || max_velocity_rpm <= 0 ||
         !within_limits(target_deg.port_9_deg) || !within_limits(target_deg.port_10_deg)) {
         return false;
@@ -109,7 +117,7 @@ bool move_to(TargetAngles target_deg, std::int32_t max_velocity_rpm, std::uint32
 
     const auto start_ms = pros::millis();
     const auto initial = motor_angles();
-    if (!initial.port_9_deg || !initial.port_10_deg || !enabled_in_mode(true) ||
+    if (!initial.port_9_deg || !initial.port_10_deg || !move_to_allowed(allow_driver) ||
         _g_motor_9.move_absolute(target_deg.port_9_deg, max_velocity_rpm) != 1 ||
         _g_motor_10.move_absolute(target_deg.port_10_deg, max_velocity_rpm) != 1) {
         stop();
@@ -118,7 +126,7 @@ bool move_to(TargetAngles target_deg, std::int32_t max_velocity_rpm, std::uint32
 
     for (auto elapsed_ms = pros::millis() - start_ms; elapsed_ms < timeout_ms;
          elapsed_ms = pros::millis() - start_ms) {
-        if (!enabled_in_mode(true)) {
+        if (!move_to_allowed(allow_driver)) {
             break;
         }
         const auto position = motor_angles();
@@ -131,7 +139,7 @@ bool move_to(TargetAngles target_deg, std::int32_t max_velocity_rpm, std::uint32
             std::abs(*position.port_9_deg - target_deg.port_9_deg) <= kPositionToleranceDeg &&
             std::abs(*position.port_10_deg - target_deg.port_10_deg) <= kPositionToleranceDeg) {
             stop();
-            return enabled_in_mode(true);
+            return move_to_allowed(allow_driver);
         }
         pros::delay(std::min(kPositionPollMs, timeout_ms - elapsed_ms));
     }
