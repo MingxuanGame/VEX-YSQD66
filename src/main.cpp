@@ -51,6 +51,7 @@ void competition_initialize() {
 }
 
 void autonomous() {
+    lifting::stop();
     autons::run();
     stop_all();
 }
@@ -58,6 +59,7 @@ void autonomous() {
 void opcontrol() {
     stop_all();
     bool manual_lift_armed = false;
+    bool lift_return_held = true;
     std::uint32_t claw_button_changed_ms = 0;
     bool claw_button_held = false;
     bool claw_closed = false;
@@ -75,12 +77,17 @@ void opcontrol() {
 
             const bool lift_up = controller.digital(io::Digital::L1);
             const bool lift_down = controller.digital(io::Digital::L2);
+            const bool lift_return_pressed = controller.digital(io::Digital::B);
             manual_lift_armed |= (!lift_up && !lift_down);
             const int lift_cmd =
                 manual_lift_armed
                     ? kLiftPower * (static_cast<int>(lift_down) - static_cast<int>(lift_up))
                     : 0;
-            lifting::set_power(lift_cmd);
+            if (lift_up || lift_down ||
+                !lifting::update_return_to_zero(lift_return_pressed && !lift_return_held)) {
+                lifting::set_power(lift_cmd);
+            }
+            lift_return_held = lift_return_pressed;
 
             const bool claw_button_pressed = controller.digital(io::Digital::R1);
             if (claw_button_pressed != claw_button_held) {
@@ -112,6 +119,7 @@ void opcontrol() {
                 stop_all();
                 autons::run_in_driver();
                 stop_all();
+                lift_return_held = true;
                 claw_button_held = false;
                 claw_closed = false;
             }
@@ -119,6 +127,7 @@ void opcontrol() {
         } else {
             stop_all();
             manual_lift_armed = false;
+            lift_return_held = true;
             claw_button_held = false;
             claw_closed = false;
             auto_start_held = false;

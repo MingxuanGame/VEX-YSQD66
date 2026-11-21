@@ -25,8 +25,12 @@ void initialize();
 // 读取两台电机的累计轴角度，正方向与正功率一致；读取失败时对应值为空。
 MotorAngles motor_angles();
 
-// 手动功率 [-127, 127]，负值上升；零功率、限位或读数失效时刹车。
+// 取消回零后应用手动功率 [-127, 127]，负值上升；零功率、限位或读数失效时刹车。
 int set_power(int power);
+
+// 在手动循环中调用。start 为按下沿，目标为两台电机的启动零位。
+// 非阻塞，处理回零时返回 true，空闲返回 false。
+bool update_return_to_zero(bool start);
 
 // 自动模式下按功率运行指定毫秒数，触及限位或中断时刹车并返回 false。
 bool move_for(int power, std::uint32_t duration_ms);
@@ -37,7 +41,7 @@ bool move_for(int power, std::uint32_t duration_ms);
 bool move_to(TargetAngles target_deg, std::int32_t max_velocity_rpm, std::uint32_t timeout_ms,
              bool allow_driver);
 
-// 刹车并保持当前位置。
+// 取消回零，刹车并保持当前位置。
 void stop();
 
 } // namespace lifting

@@ -15,11 +15,22 @@ constexpr double kPositionToleranceDeg = 3.0; // 初值，待实机标定。
 // 留出减速距离，初值沿用原升降限位设置，待实机复核。
 constexpr double kSlowZoneDeg = 45.0;
 constexpr int kNearLimitPower = 20;
+constexpr TargetAngles kZeroAngles{0.0, 0.0};
+constexpr std::int32_t kReturnVelocityRpm = 127; // 沿用原 B 键设置，带载待复核。
+constexpr std::uint32_t kReturnTimeoutMs = 5000;
+
+struct ReturnToZero {
+    TargetAngles initial_deg;
+    std::uint32_t start_ms;
+};
+
+enum class PositionStatus { Moving, Reached, Failed };
 
 // V5 智能电机，红齿轮。P9 正向、P10 反转。
 pros::Motor _g_motor_9(9, pros::MotorGears::green, pros::MotorUnits::degrees);
 pros::Motor _g_motor_10(-10, pros::MotorGears::green, pros::MotorUnits::degrees);
 bool _g_reference_ready = false;
+std::optional<ReturnToZero> _g_return_to_zero;
 
 bool initialize_motor(const pros::Motor &motor) {
     return motor.set_brake_mode(pros::MotorBrake::hold) == 1 && motor.tare_position() == 1;
@@ -80,6 +91,32 @@ bool beyond_travel(double angle_deg, double initial_deg) {
            angle_deg > std::max(kLowerLimitDeg, initial_deg);
 }
 
+std::optional<TargetAngles> start_position_move(TargetAngles target_deg,
+                                                std::int32_t velocity_rpm) {
+    const auto initial = motor_angles();
+    if (!initial.port_9_deg || !initial.port_10_deg ||
+        _g_motor_9.move_absolute(target_deg.port_9_deg, velocity_rpm) != 1 ||
+        _g_motor_10.move_absolute(target_deg.port_10_deg, velocity_rpm) != 1) {
+        return std::nullopt;
+    }
+    return TargetAngles{*initial.port_9_deg, *initial.port_10_deg};
+}
+
+PositionStatus check_position(TargetAngles target_deg, TargetAngles initial_deg) {
+    const auto position = motor_angles();
+    if (!position.port_9_deg || !position.port_10_deg ||
+        beyond_travel(*position.port_9_deg, initial_deg.port_9_deg) ||
+        beyond_travel(*position.port_10_deg, initial_deg.port_10_deg)) {
+        return PositionStatus::Failed;
+    }
+    if (within_limits(*position.port_9_deg) && within_limits(*position.port_10_deg) &&
+        std::abs(*position.port_9_deg - target_deg.port_9_deg) <= kPositionToleranceDeg &&
+        std::abs(*position.port_10_deg - target_deg.port_10_deg) <= kPositionToleranceDeg) {
+        return PositionStatus::Reached;
+    }
+    return PositionStatus::Moving;
+}
+
 } // namespace
 
 void initialize() {
@@ -93,7 +130,33 @@ MotorAngles motor_angles() {
 }
 
 int set_power(int power) {
+    _g_return_to_zero.reset();
     return apply_power(power, false);
+}
+
+bool update_return_to_zero(bool start) {
+    if (!_g_return_to_zero) {
+        if (!start) {
+            return false;
+        }
+        if (!_g_reference_ready || !enabled_in_mode(false)) {
+            stop();
+            return true;
+        }
+        const auto initial = start_position_move(kZeroAngles, kReturnVelocityRpm);
+        if (!initial) {
+            stop();
+            return true;
+        }
+        _g_return_to_zero = ReturnToZero{*initial, pros::millis()};
+    }
+
+    const auto &move = *_g_return_to_zero;
+    if (!enabled_in_mode(false) || pros::millis() - move.start_ms >= kReturnTimeoutMs ||
+        check_position(kZeroAngles, move.initial_deg) != PositionStatus::Moving) {
+        stop();
+    }
+    return true;
 }
 
 bool move_for(int power, std::uint32_t duration_ms) {
@@ -116,10 +179,10 @@ bool move_to(TargetAngles target_deg, std::int32_t max_velocity_rpm, std::uint32
     }
 
     const auto start_ms = pros::millis();
-    const auto initial = motor_angles();
-    if (!initial.port_9_deg || !initial.port_10_deg || !move_to_allowed(allow_driver) ||
-        _g_motor_9.move_absolute(target_deg.port_9_deg, max_velocity_rpm) != 1 ||
-        _g_motor_10.move_absolute(target_deg.port_10_deg, max_velocity_rpm) != 1) {
+    const auto initial = move_to_allowed(allow_driver)
+                             ? start_position_move(target_deg, max_velocity_rpm)
+                             : std::nullopt;
+    if (!initial) {
         stop();
         return false;
     }
@@ -129,17 +192,10 @@ bool move_to(TargetAngles target_deg, std::int32_t max_velocity_rpm, std::uint32
         if (!move_to_allowed(allow_driver)) {
             break;
         }
-        const auto position = motor_angles();
-        if (!position.port_9_deg || !position.port_10_deg ||
-            beyond_travel(*position.port_9_deg, *initial.port_9_deg) ||
-            beyond_travel(*position.port_10_deg, *initial.port_10_deg)) {
-            break;
-        }
-        if (within_limits(*position.port_9_deg) && within_limits(*position.port_10_deg) &&
-            std::abs(*position.port_9_deg - target_deg.port_9_deg) <= kPositionToleranceDeg &&
-            std::abs(*position.port_10_deg - target_deg.port_10_deg) <= kPositionToleranceDeg) {
+        const auto status = check_position(target_deg, *initial);
+        if (status != PositionStatus::Moving) {
             stop();
-            return move_to_allowed(allow_driver);
+            return status == PositionStatus::Reached && move_to_allowed(allow_driver);
         }
         pros::delay(std::min(kPositionPollMs, timeout_ms - elapsed_ms));
     }
@@ -148,6 +204,7 @@ bool move_to(TargetAngles target_deg, std::int32_t max_velocity_rpm, std::uint32
 }
 
 void stop() {
+    _g_return_to_zero.reset();
     _g_motor_9.brake();
     _g_motor_10.brake();
 }
