@@ -97,41 +97,51 @@ void run_red_left(bool allow_driver) {
     wait_for_drive();
 }
 
-void run_red_down() {
+void run_red_down(bool) {
     auto &chassis = chassis::controller();
     chassis.setPose(0.0F, 0.0F, 0.0F);
 
     // 预留：红方下路线（在此组装 LemLib Path Planner 路径与 C++ Custom 升降/夹爪代码）
 }
 
-void run_blue_right() {
+void run_blue_right(bool) {
     auto &chassis = chassis::controller();
     chassis.setPose(0.0F, 0.0F, 0.0F);
 
     // 预留：蓝方右路线（在此组装 LemLib Path Planner 路径与 C++ Custom 升降/夹爪代码）
 }
 
-void run_blue_up() {
+void run_blue_up(bool) {
     auto &chassis = chassis::controller();
     chassis.setPose(0.0F, 0.0F, 0.0F);
 
     // 预留：蓝方上路线（在此组装 LemLib Path Planner 路径与 C++ Custom 升降/夹爪代码）
 }
 
+// Plan 2 的路线动作待填写。
+void run_red_left_2(bool) {}
+
+void run_red_down_2(bool) {}
+
+void run_blue_right_2(bool) {}
+
+void run_blue_up_2(bool) {}
+
 void run_impl(bool allow_driver) {
     const auto preset = brain_ui::selected_auton();
+    const bool plan_2 = brain_ui::selected_plan() == brain_ui::AutonPlan::Plan2;
     switch (preset) {
     case brain_ui::AutonPreset::RedLeft:
-        run_red_left(allow_driver);
+        (plan_2 ? run_red_left_2 : run_red_left)(allow_driver);
         break;
     case brain_ui::AutonPreset::RedDown:
-        run_red_down();
+        (plan_2 ? run_red_down_2 : run_red_down)(allow_driver);
         break;
     case brain_ui::AutonPreset::BlueRight:
-        run_blue_right();
+        (plan_2 ? run_blue_right_2 : run_blue_right)(allow_driver);
         break;
     case brain_ui::AutonPreset::BlueUp:
-        run_blue_up();
+        (plan_2 ? run_blue_up_2 : run_blue_up)(allow_driver);
         break;
     case brain_ui::AutonPreset::Count:
         break;

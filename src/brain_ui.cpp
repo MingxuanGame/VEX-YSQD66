@@ -22,6 +22,8 @@ namespace brain_ui {
 namespace {
 
 constexpr std::size_t kPresetCount = static_cast<std::size_t>(AutonPreset::Count);
+constexpr std::size_t kPlanCount = static_cast<std::size_t>(AutonPlan::Count);
+constexpr std::array<const char *, kPlanCount> kPlanLabels{"Plan 1", "Plan 2"};
 constexpr std::uint32_t kReadoutRefreshMs = 100;
 constexpr char kPoseUnavailable[] = "Pose  X -- in   Y -- in   Theta -- deg";
 
@@ -40,15 +42,23 @@ constexpr std::array<PresetMeta, kPresetCount> kPresets{{
 
 std::atomic<int> _g_selected_auton{static_cast<int>(AutonPreset::RedLeft)};
 std::atomic<int> _g_pending_auton{-1};
+std::atomic<AutonPlan> _g_selected_plan{AutonPlan::Plan1};
+std::atomic<AutonPlan> _g_pending_plan{AutonPlan::Count};
 bool _g_ui_ready = false;
 lv_obj_t *_g_auton_header = nullptr;
 std::array<lv_obj_t *, kPresetCount> _g_auton_buttons{};
+std::array<lv_obj_t *, kPlanCount> _g_plan_buttons{};
 
 void on_auton_clicked(lv_event_t *event) {
     const auto index = reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event));
     if (index < kPresetCount) {
         _g_pending_auton.store(static_cast<int>(index));
     }
+}
+
+void on_plan_clicked(lv_event_t *event) {
+    const auto index = reinterpret_cast<std::uintptr_t>(lv_event_get_user_data(event));
+    _g_pending_plan.store(static_cast<AutonPlan>(index));
 }
 
 lv_obj_t *make_button(lv_obj_t *parent, int32_t x, int32_t y, int32_t w, int32_t h,
@@ -128,6 +138,13 @@ void refresh_chassis_readout(lv_timer_t *timer) {
     set_text_if_changed(label, text.data());
 }
 
+void style_selection(lv_obj_t *button, std::uint32_t background, bool selected) {
+    lv_obj_set_style_bg_color(button, lv_color_hex(background), LV_PART_MAIN);
+    lv_obj_set_style_border_width(button, selected ? 3 : 1, LV_PART_MAIN);
+    lv_obj_set_style_border_color(button, lv_color_hex(selected ? 0xFFD700 : 0x475B6E),
+                                  LV_PART_MAIN);
+}
+
 void apply_auton_selection_styles() {
     const auto active = static_cast<std::size_t>(selected_auton());
     std::array<char, 40> header{};
@@ -138,10 +155,13 @@ void apply_auton_selection_styles() {
         const bool selected = (i == active);
         const std::uint32_t bg = kPresets[i].is_red ? (selected ? 0xD63031 : 0x6E1B1B)
                                                     : (selected ? 0x2E86DE : 0x194575);
-        lv_obj_set_style_bg_color(_g_auton_buttons[i], lv_color_hex(bg), LV_PART_MAIN);
-        lv_obj_set_style_border_width(_g_auton_buttons[i], selected ? 3 : 1, LV_PART_MAIN);
-        lv_obj_set_style_border_color(_g_auton_buttons[i],
-                                      lv_color_hex(selected ? 0xFFD700 : 0x475B6E), LV_PART_MAIN);
+        style_selection(_g_auton_buttons[i], bg, selected);
+    }
+
+    const auto active_plan = static_cast<std::size_t>(selected_plan());
+    for (std::size_t i = 0; i < kPlanCount; ++i) {
+        const bool selected = (i == active_plan);
+        style_selection(_g_plan_buttons[i], selected ? 0x3B5269 : 0x23313D, selected);
     }
 }
 
@@ -176,7 +196,17 @@ void initialize() {
                         on_auton_clicked, reinterpret_cast<void *>(static_cast<std::uintptr_t>(i)));
     }
 
-    constexpr int32_t kLiftY = kAutonY + kAutonH + 4;
+    constexpr int32_t kPlanY = kAutonY + kAutonH + kAutonGap;
+    constexpr int32_t kPlanW = 2 * kAutonW + kAutonGap;
+    constexpr int32_t kPlanH = 40;
+    for (std::size_t i = 0; i < kPlanCount; ++i) {
+        const int32_t x = 10 + static_cast<int32_t>(i) * (kPlanW + kAutonGap);
+        _g_plan_buttons[i] =
+            make_button(screen, x, kPlanY, kPlanW, kPlanH, 0x23313D, kPlanLabels[i],
+                        on_plan_clicked, reinterpret_cast<void *>(static_cast<std::uintptr_t>(i)));
+    }
+
+    constexpr int32_t kLiftY = kPlanY + kPlanH + 4;
     make_label(screen, 10, kLiftY, 0xFFFFFF, &brain_menu_font, "升降");
     auto *lift_angles =
         make_label(screen, 52, kLiftY, 0xFFFFFF, &lv_font_montserrat_16, "P9 / P10  {--, --} deg");
@@ -201,6 +231,10 @@ AutonPreset selected_auton() {
     return static_cast<AutonPreset>(raw);
 }
 
+AutonPlan selected_plan() {
+    return _g_selected_plan.load();
+}
+
 const char *auton_name(AutonPreset preset) {
     const auto index = static_cast<std::size_t>(preset);
     return index < kPresetCount ? kPresets[index].full_name : kPresets[0].full_name;
@@ -208,10 +242,16 @@ const char *auton_name(AutonPreset preset) {
 
 void tick() {
     const int pending = _g_pending_auton.exchange(-1);
-    if (!_g_ui_ready || pending < 0 || pending >= static_cast<int>(AutonPreset::Count)) {
+    const auto pending_plan = _g_pending_plan.exchange(AutonPlan::Count);
+    if (!_g_ui_ready || (pending < 0 && pending_plan == AutonPlan::Count)) {
         return;
     }
-    _g_selected_auton.store(pending);
+    if (pending >= 0) {
+        _g_selected_auton.store(pending);
+    }
+    if (pending_plan != AutonPlan::Count) {
+        _g_selected_plan.store(pending_plan);
+    }
     lv_lock();
     apply_auton_selection_styles();
     lv_unlock();
