@@ -17,8 +17,8 @@ constexpr double kSlowZoneDeg = 45.0;
 constexpr int kNearLimitPower = 20;
 
 // V5 智能电机，红齿轮。P9 正向、P10 反转。
-pros::Motor _g_motor_9(9, pros::MotorGears::red, pros::MotorUnits::degrees);
-pros::Motor _g_motor_10(-10, pros::MotorGears::red, pros::MotorUnits::degrees);
+pros::Motor _g_motor_9(9, pros::MotorGears::green, pros::MotorUnits::degrees);
+pros::Motor _g_motor_10(-10, pros::MotorGears::green, pros::MotorUnits::degrees);
 bool _g_reference_ready = false;
 
 bool initialize_motor(const pros::Motor &motor) {
@@ -102,7 +102,7 @@ bool move_for(int power, std::uint32_t duration_ms) {
 }
 
 bool move_to(TargetAngles target_deg, std::int32_t max_velocity_rpm, std::uint32_t timeout_ms) {
-    if (!_g_reference_ready || !enabled_in_mode(true) || timeout_ms == 0 || max_velocity_rpm <= 0 ||
+    if (!_g_reference_ready || timeout_ms == 0 || max_velocity_rpm <= 0 ||
         !within_limits(target_deg.port_9_deg) || !within_limits(target_deg.port_10_deg)) {
         return false;
     }

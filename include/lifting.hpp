@@ -6,8 +6,8 @@
 namespace lifting {
 
 // 以启动位置为零，角度减小为上升。
-inline constexpr double kUpperLimitDeg = -1200.0;
-inline constexpr double kLowerLimitDeg = +1350.0;
+inline constexpr double kUpperLimitDeg = -1530.0;
+inline constexpr double kLowerLimitDeg = +1530.0;
 
 struct MotorAngles {
     std::optional<double> port_9_deg;
