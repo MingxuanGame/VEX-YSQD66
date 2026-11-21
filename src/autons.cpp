@@ -154,7 +154,7 @@ void run_route(bool allow_driver, RoutePoint (*transform)(RoutePoint)) {
     }
     // 第一次放 Pin：驶向红 Goal，顶进去后开爪放下预装 Pin。
     // 实车在碰到 Goal 前就停住，目标点沿车头方向再顶 3 in，timeout 加 300 ms。
-    move_to_pose(-49.0F, -22.3F, 160.0F, 1800, {.lead = 0.5F});
+    move_to_pose(-49.0F, -22.3F, 150.0F, 1800, {.lead = 0.5F});
     if (!wait_at_point(-49.0F, -22.3F)) {
         return;
     }
