@@ -67,8 +67,8 @@ void run_red_left(bool allow_driver) {
     }
 
     // 驶向 Red Goal，撞上得分座后松开夹爪放下 Pin，再倒车退出。
-    chassis.moveToPose(-50.5F, -18.5F, 158.0F, 2050);
-    if (!wait_at_point(-50.5F, -18.5F)) {
+    chassis.moveToPose(-50.0F, -19.5F, 160.0F, 2100, {.lead = 0.5F});
+    if (!wait_at_point(-50.0F, -19.5F)) {
         return;
     }
     claw::open();
@@ -78,19 +78,19 @@ void run_red_left(bool allow_driver) {
     }
 
     // 驶向分界线外侧的黄 Pin，到点夹紧后再运往 Neutral Goal。
-    chassis.moveToPose(-28.0F, -21.4F, 120.0F, 2650);
-    if (!wait_at_point(-28.0F, -21.4F)) {
+    chassis.moveToPose(-28.3F, -20.8F, 128.0F, 2650, {.lead = 0.4F});
+    if (!wait_at_point(-28.3F, -20.8F)) {
         return;
     }
     claw::close();
 
     // 底盘异步驶向 Neutral Goal。升降在途中抬升，两者都到位后再放下黄 Pin。
-    chassis.moveToPose(-46.6F, 16.0F, -14.1F, 3400, {.lead = 0.2F});
+    chassis.moveToPose(-46.9F, 20.5F, -9.5F, 3550, {.lead = 0.2F});
     constexpr std::uint32_t kLiftTimeoutMs = 4000;
     constexpr std::int32_t kLiftMaxVelocityRpm = 100; // 带载待实车验证。
     lifting::move_to({850, 850}, kLiftMaxVelocityRpm,
                      std::min(kLiftTimeoutMs, route_timer.getTimeLeft()), allow_driver);
-    if (!wait_at_point(-46.6F, 16.0F)) {
+    if (!wait_at_point(-46.9F, 20.5F)) {
         return;
     }
     // 放下黄 Pin
