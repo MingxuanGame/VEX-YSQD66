@@ -31,6 +31,7 @@ void initialize() {
     lifting::initialize();
     claw::initialize();
     toggle::initialize();
+    claw::close();
 }
 
 void disabled() {
