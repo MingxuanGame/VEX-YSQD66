@@ -20,6 +20,7 @@ void stop_all() {
     chassis::stop();
     lifting::stop();
     claw::stop();
+    toggle::stop();
 }
 
 } // namespace
@@ -29,6 +30,7 @@ void initialize() {
     chassis::initialize();
     lifting::initialize();
     claw::initialize();
+    toggle::initialize();
 }
 
 void disabled() {
