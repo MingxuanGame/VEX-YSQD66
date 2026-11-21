@@ -60,6 +60,7 @@ void opcontrol() {
     int claw_hold_last_ms = -1;
     bool claw_closed = false;
     bool auto_start_held = false;
+    bool in_auton = false;
 
     while (true) {
         auto wake_ms = pros::millis();
@@ -80,24 +81,26 @@ void opcontrol() {
                     : 0;
             lifting::set_power(lift_cmd);
 
-            if (controller.digital(io::Digital::R1)) {
-                if (claw_closed) {
-                    claw_hold_last_ms = pros::millis();
-                }
-                if (claw_hold_last_ms == -1) {
-                    claw_hold_last_ms = pros::millis();
-                }
+            if (!in_auton) {  // 自动赛禁用夹爪按住逻辑，夹爪归自动程序控制
+                if (controller.digital(io::Digital::R1)) {
+                    if (claw_closed) {
+                        claw_hold_last_ms = pros::millis();
+                    }
+                    if (claw_hold_last_ms == -1) {
+                        claw_hold_last_ms = pros::millis();
+                    }
 
-                if (pros::millis() - claw_hold_last_ms >= 50) {
-                    claw::close();
-                    claw_closed = true;
+                    if (pros::millis() - claw_hold_last_ms >= 50) {
+                        claw::close();
+                        claw_closed = true;
+                    }
                 }
-            }
-            if (claw_closed && !controller.digital(io::Digital::R1) &&
-                pros::millis() - claw_hold_last_ms >= 50) {
-                claw::open();
-                claw_hold_last_ms = -1;
-                claw_closed = false;
+                if (claw_closed && !controller.digital(io::Digital::R1) &&
+                    pros::millis() - claw_hold_last_ms >= 50) {
+                    claw::open();
+                    claw_hold_last_ms = -1;
+                    claw_closed = false;
+                }
             }
 
             if (controller.digital(io::Digital::Up)) {
@@ -111,7 +114,9 @@ void opcontrol() {
             if (auto_start && !auto_start_held) {
                 stop_all();
                 autons::run_in_driver();
+                in_auton = true;
                 stop_all();
+                in_auton = false;
             }
             auto_start_held = auto_start;
         } else {
