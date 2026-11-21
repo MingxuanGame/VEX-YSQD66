@@ -21,7 +21,7 @@ namespace autons {
 namespace {
 
 void run_red_left(bool allow_driver) {
-    // 上电/进入手动时夹爪是松开的，路线开始时先夹紧，固定预装 Pin。
+    // 路线开始时夹紧，固定预装 Pin。
     claw::close();
     // Override 2.1 第 18 页：对抗赛自动时段为 15 秒；路线最多运行 14.9 秒，留 100 ms 停车余量。
     constexpr std::uint32_t kRouteBudgetMs = 14900;
@@ -157,6 +157,10 @@ void run_impl(bool allow_driver) {
 } // namespace
 
 void run() {
+    if (!pros::competition::is_autonomous() || pros::competition::is_disabled()) {
+        return;
+    }
+    claw::unlock_startup();
     run_impl(false);
 }
 

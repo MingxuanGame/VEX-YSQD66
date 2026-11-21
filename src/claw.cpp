@@ -10,8 +10,10 @@ constexpr char kClawPort = 'E';
 constexpr bool kOpenOutput = false;
 constexpr bool kClosedOutput = true;
 
+bool _g_startup_locked = true;
+
 const pros::adi::DigitalOut &solenoid() {
-    static const pros::adi::DigitalOut output(kClawPort, kOpenOutput);
+    static const pros::adi::DigitalOut output(kClawPort, kClosedOutput);
     return output;
 }
 
@@ -28,8 +30,18 @@ void initialize() {
     solenoid();
 }
 
+bool unlock_startup() {
+    if (!_g_startup_locked || pros::competition::is_disabled()) {
+        return false;
+    }
+    _g_startup_locked = false;
+    return true;
+}
+
 void open() {
-    set_output(kOpenOutput);
+    if (!_g_startup_locked) {
+        set_output(kOpenOutput);
+    }
 }
 
 void close() {
@@ -37,7 +49,11 @@ void close() {
 }
 
 void stop() {
-    solenoid().set_value(kOpenOutput);
+    if (_g_startup_locked) {
+        close();
+    } else {
+        solenoid().set_value(kOpenOutput);
+    }
 }
 
 } // namespace claw

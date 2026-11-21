@@ -4,16 +4,17 @@
 #include "brain_ui.hpp"
 #include "chassis.h"
 #include "claw.hpp"
-#include "toggle.hpp"
 #include "io/controller.hpp"
 #include "io/pros_controller.hpp"
 #include "lifting.hpp"
+#include "toggle.hpp"
 
 #include <cstdint>
 
 namespace {
 
 constexpr std::uint32_t kDriverPeriodMs = 20;
+constexpr std::uint32_t kClawButtonDelayMs = 50;
 constexpr int kLiftPower = 80;
 
 void stop_all() {
@@ -26,12 +27,11 @@ void stop_all() {
 } // namespace
 
 void initialize() {
+    claw::initialize();
     brain_ui::initialize();
     chassis::initialize();
     lifting::initialize();
-    claw::initialize();
     toggle::initialize();
-    claw::close();
 }
 
 void disabled() {
@@ -58,10 +58,10 @@ void autonomous() {
 void opcontrol() {
     stop_all();
     bool manual_lift_armed = false;
-    int claw_hold_last_ms = -1;
+    std::uint32_t claw_button_changed_ms = 0;
+    bool claw_button_held = false;
     bool claw_closed = false;
     bool auto_start_held = false;
-    bool in_auton = false;
 
     while (true) {
         auto wake_ms = pros::millis();
@@ -82,26 +82,22 @@ void opcontrol() {
                     : 0;
             lifting::set_power(lift_cmd);
 
-            if (!in_auton) {  // 自动赛禁用夹爪按住逻辑，夹爪归自动程序控制
-                if (controller.digital(io::Digital::R1)) {
-                    if (claw_closed) {
-                        claw_hold_last_ms = pros::millis();
-                    }
-                    if (claw_hold_last_ms == -1) {
-                        claw_hold_last_ms = pros::millis();
-                    }
-
-                    if (pros::millis() - claw_hold_last_ms >= 50) {
-                        claw::close();
-                        claw_closed = true;
-                    }
+            const bool claw_button_pressed = controller.digital(io::Digital::R1);
+            if (claw_button_pressed != claw_button_held) {
+                claw_button_held = claw_button_pressed;
+                claw_button_changed_ms = wake_ms;
+                if (claw_button_pressed && claw::unlock_startup()) {
+                    claw_closed = true;
                 }
-                if (claw_closed && !controller.digital(io::Digital::R1) &&
-                    pros::millis() - claw_hold_last_ms >= 50) {
+            }
+            if (claw_button_held != claw_closed &&
+                wake_ms - claw_button_changed_ms >= kClawButtonDelayMs) {
+                if (claw_button_held) {
+                    claw::close();
+                } else {
                     claw::open();
-                    claw_hold_last_ms = -1;
-                    claw_closed = false;
                 }
+                claw_closed = claw_button_held;
             }
 
             if (controller.digital(io::Digital::Up)) {
@@ -115,14 +111,16 @@ void opcontrol() {
             if (auto_start && !auto_start_held) {
                 stop_all();
                 autons::run_in_driver();
-                in_auton = true;
                 stop_all();
-                in_auton = false;
+                claw_button_held = false;
+                claw_closed = false;
             }
             auto_start_held = auto_start;
         } else {
             stop_all();
             manual_lift_armed = false;
+            claw_button_held = false;
+            claw_closed = false;
             auto_start_held = false;
         }
 
