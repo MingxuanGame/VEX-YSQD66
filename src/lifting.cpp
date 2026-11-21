@@ -102,7 +102,7 @@ bool move_for(int power, std::uint32_t duration_ms) {
 }
 
 bool move_to(TargetAngles target_deg, std::int32_t max_velocity_rpm, std::uint32_t timeout_ms) {
-    if (!_g_reference_ready || !enabled_in_mode(true) || timeout_ms == 0 || max_velocity_rpm <= 0 ||
+    if (!_g_reference_ready || timeout_ms == 0 || max_velocity_rpm <= 0 ||
         !within_limits(target_deg.port_9_deg) || !within_limits(target_deg.port_10_deg)) {
         return false;
     }
