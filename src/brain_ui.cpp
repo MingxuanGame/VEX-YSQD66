@@ -23,7 +23,7 @@ namespace {
 
 constexpr std::size_t kPresetCount = static_cast<std::size_t>(AutonPreset::Count);
 constexpr std::size_t kPlanCount = static_cast<std::size_t>(AutonPlan::Count);
-constexpr std::array<const char *, kPlanCount> kPlanLabels{"Plan 1", "Plan 2"};
+constexpr std::array<const char *, kPlanCount> kPlanLabels{"Plan 1", "Plan 2", "Plan 3"};
 constexpr std::uint32_t kReadoutRefreshMs = 100;
 constexpr char kPoseUnavailable[] = "Pose  X -- in   Y -- in   Theta -- deg";
 
@@ -197,7 +197,8 @@ void initialize() {
     }
 
     constexpr int32_t kPlanY = kAutonY + kAutonH + kAutonGap;
-    constexpr int32_t kPlanW = 2 * kAutonW + kAutonGap;
+    // 三个方案按钮平分整行：3 × 148 + 2 × 8 间距，左右各留 10 px。
+    constexpr int32_t kPlanW = 148;
     constexpr int32_t kPlanH = 40;
     for (std::size_t i = 0; i < kPlanCount; ++i) {
         const int32_t x = 10 + static_cast<int32_t>(i) * (kPlanW + kAutonGap);

@@ -77,7 +77,8 @@ def flags(language):
     common = (ROOT / "common.mk").read_text(encoding="utf-8")
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
     def assignment(text, key):
-        match = re.search(r"^" + re.escape(key) + r"\s*[:?]?=\s*(.*)$", text, re.M)
+        # 只允许行内空白：用 \s* 会把空赋值的换行也吞掉，误抓到下一行。
+        match = re.search(r"^" + re.escape(key) + r"[ \t]*[:?]?=[ \t]*(.*)$", text, re.M)
         if not match:
             raise ValueError(f"Missing {key} in build configuration")
         value = match.group(1).split("#", 1)[0].strip()

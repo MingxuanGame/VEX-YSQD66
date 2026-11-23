@@ -6,8 +6,8 @@
 
 - **LemLib 底盘与定位**：沿用四电机双侧直轮底盘（左前 2、左后 1，右前 3、右后 4 反转，蓝齿轮 600 rpm）及端口 5 的 IMU；不外接从动定位轮，由 `lemlib::Chassis` 自动通过左右驱动电机组编码器与 IMU 进行里程计解算与闭环运动控制。
 - **手动驾驶**：在 `opcontrol()` 中以 20ms 周期通过 `io::Controller` 读取手柄，左摇杆前后与右摇杆转向经 `lemlib::ExpoDriveCurve` 指数曲线和 `lemlib::Chassis::arcade()` 混控驱动底盘；按住 **L2** 上升、**L1** 下降控制升降。程序启动时夹爪保持夹紧，场控启动自动赛、手动按 **A** 启动自动路线或按 **R1** 时解锁。手动按住 **R1** 夹紧，松手放开。
-- **Brain 触屏界面**：第一排选择自动赛预设（`RED LEFT` / `RED DOWN` / `BLUE RIGHT` / `BLUE UP`），第二排选择 `Plan 1` 或 `Plan 2`。开机默认 `RED LEFT` 与 `Plan 1`。
-- **自动赛入口**：`autons::run()` 根据所选预设和方案运行路线。以 `RED LEFT` 为例，`Plan 1` 调用 `run_red_left()`，`Plan 2` 调用 `run_red_left_2()`。四个 `_2` 函数待填入路线动作。
+- **Brain 触屏界面**：第一排选择自动赛预设（`RED LEFT` / `RED DOWN` / `BLUE RIGHT` / `BLUE UP`），第二排选择 `Plan 1` / `Plan 2` / `Plan 3`。开机默认 `RED LEFT` 与 `Plan 1`。
+- **自动赛入口**：`autons::run()` 根据所选预设和方案运行路线。以 `RED LEFT` 为例，`Plan 1` 调用 `run_red_left()`（放预装 Pin 后直接回中央），`Plan 2` 调用 `run_red_left_2()`（抢内侧 Pin），`Plan 3` 调用 `run_red_left_3()`（抢黄 Pin 并叠放到同一个 Goal）。目前只有 `RED LEFT` 填了三个方案，其余预设的 `_2`、`_3` 函数仍为空。
 
 > 机构接线与标定步骤见 [机构模块](docs/mechanisms.md)。赛制与编程规范见 [AGENTS.md](AGENTS.md) 与 [规则索引](docs/rules/README.md)。
 

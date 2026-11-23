@@ -3,7 +3,7 @@
 namespace brain_ui {
 
 enum class AutonPreset { RedLeft, RedDown, BlueRight, BlueUp, Count };
-enum class AutonPlan { Plan1, Plan2, Count };
+enum class AutonPlan { Plan1, Plan2, Plan3, Count };
 
 // 初始化 Brain 触屏界面（自动赛预设选择）；非阻塞，不驱动任何机构。
 void initialize();
