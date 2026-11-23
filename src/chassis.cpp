@@ -1,6 +1,5 @@
 #include "chassis.h"
 
-#include "lemlib/api.hpp"
 #include "pros/imu.hpp"
 #include "pros/misc.hpp"
 #include "pros/motor_group.hpp"
@@ -11,54 +10,55 @@
 namespace chassis {
 namespace {
 
-// 面向车头：左前 2、左后 1，右前 3、右后 4；蓝齿轮 600 rpm。
-// LemLib 约定正控制量驱动底盘前进、左正右负使车头顺时针（向右）旋转。
-// 若实机推前摇杆反而倒车，请将两侧端口符号同时取反，
-// 勿仅在手动输入取反，否则自动路线与里程计方向会反向。
-constexpr std::uint8_t kImuPort = 5;
+constexpr std::uint8_t kImuPort = 5;                    // IMU 端口
+constexpr float kTrackWidthIn = 11.58F;                 // 轮距（in）
+constexpr float kWheelDiameterIn = 2.75F;               // 轮径（in）
+constexpr float kDrivetrainRpm = 600.0F * 6.0F / 10.0F; // 蓝色齿轮组 600 rpm，减速比 6:10
+constexpr float kHorizontalDrift = 8.0F;                // 水平漂移补偿值
 
-// 轮距和轮径来自路线规划配置，待实车复核。
-constexpr float kTrackWidthIn = 11.58F;
-constexpr float kWheelDiameterIn = 2.75F;
-constexpr float kDrivetrainRpm = 600.0F * 6.0F / 10.0F; // 蓝齿轮组 600 rpm，轮端 360 rpm。
-constexpr float kHorizontalDrift = 8.0F;                // LemLib 转弯限速参数，待实机标定。
-
+// 车头（夹爪）
+// 2-1
+// 3-4
 pros::MotorGroup _g_left({-2, -1}, pros::MotorGears::blue, pros::MotorUnits::degrees);
 pros::MotorGroup _g_right({3, 4}, pros::MotorGears::blue, pros::MotorUnits::degrees);
 pros::Imu _g_imu(kImuPort);
 
 lemlib::Drivetrain _g_drivetrain(&_g_left, &_g_right, kTrackWidthIn, kWheelDiameterIn,
                                  kDrivetrainRpm, kHorizontalDrift);
-
-// 无外接定位轮。LemLib 校准后用左右驱动电机编码器和传动比换算纵向位移。
 lemlib::OdomSensors _g_sensors(nullptr, nullptr, nullptr, nullptr, &_g_imu);
 
-// TODO: 待实机标定纵向与转向 PID 参数。
+// TODO: 未测定
+// see https://lemlib.readthedocs.io/en/stable/tutorials/4_pid_tuning.html
 lemlib::ControllerSettings _g_lateral_settings(10.0F,  // kP
                                                0.0F,   // kI
                                                3.0F,   // kD
-                                               3.0F,   // anti-windup
-                                               1.0F,   // small error range (in)
-                                               100.0F, // small error timeout (ms)
-                                               3.0F,   // large error range (in)
-                                               500.0F, // large error timeout (ms)
-                                               20.0F   // slew
+                                               3.0F,   // 积分生效的误差范围
+                                               1.0F,   // 	高精度结束条件的误差范围 (in)
+                                               100.0F, // 保持在小误差范围内的时间 (ms)
+                                               3.0F,   // 	低精度结束条件的误差范围 (in)
+                                               500.0F, // 保持在大误差范围内的时间 (ms)
+                                               20.0F   // 限制电机控制输出的变化速度
 );
 
 lemlib::ControllerSettings _g_angular_settings(2.0F,   // kP
                                                0.0F,   // kI
                                                10.0F,  // kD
-                                               3.0F,   // anti-windup
-                                               1.0F,   // small error range (deg)
-                                               100.0F, // small error timeout (ms)
-                                               3.0F,   // large error range (deg)
-                                               500.0F, // large error timeout (ms)
-                                               0.0F    // slew
+                                               3.0F,   // 积分生效的误差范围
+                                               1.0F,   // 高精度结束条件的误差范围 (deg)
+                                               100.0F, // 保持在小误差范围内的时间 (ms)
+                                               3.0F,   // 低精度结束条件的误差范围 (deg)
+                                               500.0F, // 保持在大误差范围内的时间 (ms)
+                                               0.0F    // 限制电机控制输出的变化速度
 );
 
-// TODO: 按手柄手感实机微调死区、最小输出和指数曲线增益。
-lemlib::ExpoDriveCurve _g_throttle_curve(3.0F, 10.0F, 1.019F);
-lemlib::ExpoDriveCurve _g_steer_curve(3.0F, 10.0F, 1.019F);
+lemlib::ExpoDriveCurve _g_throttle_curve(3.0F,  // 死区
+                                         10.0F, // 最小输出
+                                         1.019F // 指数曲线增益
+);
+lemlib::ExpoDriveCurve _g_steer_curve(3.0F,  // 死区
+                                      10.0F, // 最小输出
+                                      1.019F // 指数曲线增益
+);
 
 lemlib::Chassis _g_chassis(_g_drivetrain, _g_lateral_settings, _g_angular_settings, _g_sensors,
                            &_g_throttle_curve, &_g_steer_curve);

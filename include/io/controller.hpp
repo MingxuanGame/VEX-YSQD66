@@ -15,8 +15,13 @@ class Controller {
 public:
     virtual ~Controller() = default;
 
+    // 返回手柄当前是否已连接；非阻塞。
     virtual bool isConnected() const = 0;
+
+    // 读取指定摇杆轴的瞬时值，范围 [-127, 127]；非阻塞。
     virtual int analog(Analog channel) const = 0;
+
+    // 读取指定按键当前是否处于按下状态；非阻塞。
     virtual bool digital(Digital button) const = 0;
 };
 

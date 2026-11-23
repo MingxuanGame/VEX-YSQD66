@@ -1,6 +1,8 @@
-
 #include "pros/adi.hpp"
 #include "pros/misc.hpp"
+
+namespace toggle {
+namespace {
 constexpr char kTogglePort = 'D';
 constexpr bool kUpOutput = false;
 constexpr bool kDownOutput = true;
@@ -16,10 +18,10 @@ void set_output(bool energized) {
     }
 }
 
-namespace toggle {
 void initialize() {
     solenoid();
 }
+} // namespace
 
 void up() {
     set_output(kUpOutput);

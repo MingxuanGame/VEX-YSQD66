@@ -16,6 +16,8 @@ namespace {
 constexpr std::uint32_t kDriverPeriodMs = 20;
 constexpr std::uint32_t kClawButtonDelayMs = 50;
 constexpr int kLiftPower = 80;
+constexpr std::int32_t kLiftReturnVelocityRpm = 127;
+constexpr std::uint32_t kLiftReturnTimeoutMs = 5000;
 
 void stop_all() {
     chassis::stop();
@@ -83,8 +85,10 @@ void opcontrol() {
                 manual_lift_armed
                     ? kLiftPower * (static_cast<int>(lift_down) - static_cast<int>(lift_up))
                     : 0;
-            if (lift_up || lift_down ||
-                !lifting::update_return_to_zero(lift_return_pressed && !lift_return_held)) {
+            if (lift_return_pressed && !lift_return_held && !lift_up && !lift_down) {
+                chassis::stop();
+                lifting::move_to(0.0, kLiftReturnVelocityRpm, kLiftReturnTimeoutMs);
+            } else {
                 lifting::set_power(lift_cmd);
             }
             lift_return_held = lift_return_pressed;
@@ -113,7 +117,6 @@ void opcontrol() {
                 toggle::down();
             }
 
-            // 按 A 运行一次所选自动路线；返回后继续手动控制，仅按下沿触发避免重复启动。
             const bool auto_start = controller.digital(io::Digital::A);
             if (auto_start && !auto_start_held) {
                 stop_all();

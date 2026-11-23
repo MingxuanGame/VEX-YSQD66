@@ -14,34 +14,23 @@ struct MotorAngles {
     std::optional<double> port_10_deg;
 };
 
-struct TargetAngles {
-    double port_9_deg;
-    double port_10_deg;
-};
-
-// 设置双电机保持制动模式，并以启动位置为编码器零点。
+// 设置双电机保持制动模式，并以当前位置为编码器零点；非阻塞。
 void initialize();
 
-// 读取两台电机的累计轴角度，正方向与正功率一致；读取失败时对应值为空。
+// 读取两台电机的累计轴角度（单位：度，正方向与正功率一致）；读取失败时对应值为 std::nullopt。
 MotorAngles motor_angles();
 
-// 取消回零后应用手动功率 [-127, 127]，负值上升；零功率、限位或读数失效时刹车。
+// 应用开环功率 [-127, 127]（负值上升）并自动限位减速；非阻塞，未初始化、零功率、触及限位、读数异常或禁用时刹车，返回实际输出功率。
 int set_power(int power);
 
-// 在手动循环中调用。start 为按下沿，目标为两台电机的启动零位。
-// 非阻塞，处理回零时返回 true，空闲返回 false。
-bool update_return_to_zero(bool start);
-
-// 自动模式下按功率运行指定毫秒数，触及限位或中断时刹车并返回 false。
+// 按开环功率 [-127, 127] 持续运行指定毫秒数（ms）；阻塞等待完成，触及限位、读数异常或禁用时提前刹车并返回 false。
 bool move_for(int power, std::uint32_t duration_ms);
 
-// 按屏幕的 P9、P10 顺序接收绝对角度（度），以正转速上限（rpm）运行。
-// allow_driver 为 true 时允许在手动阶段执行，供 opcontrol 里的按 A 自动路线入口调用。
-// 拒绝越界目标；阻塞等待双电机到位，超时（ms）、读数异常、越界或退出时刹车。
-bool move_to(TargetAngles target_deg, std::int32_t max_velocity_rpm, std::uint32_t timeout_ms,
-             bool allow_driver);
+// 按绝对角度（度）同时驱动双电机，以正转速上限（rpm）运行。
+// 拒绝未初始化或越界目标；阻塞等待双电机到位，超时（ms）、读数异常、越界或禁用时刹车并返回 false。
+bool move_to(double target_deg, std::int32_t max_velocity_rpm, std::uint32_t timeout_ms);
 
-// 取消回零，刹车并保持当前位置。
+// 立即刹车并保持双电机当前位置；非阻塞。
 void stop();
 
 } // namespace lifting

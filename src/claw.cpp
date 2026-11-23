@@ -18,10 +18,7 @@ const pros::adi::DigitalOut &solenoid() {
 }
 
 void set_output(bool energized) {
-    // Override 2.1 <R9>：仅在机器人启用时接受夹爪指令。
-    if (!pros::competition::is_disabled()) {
-        solenoid().set_value(energized);
-    }
+    solenoid().set_value(energized);
 }
 
 } // namespace
