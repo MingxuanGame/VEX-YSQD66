@@ -17,11 +17,11 @@ void set_output(bool energized) {
         solenoid().set_value(energized);
     }
 }
+} // namespace
 
 void initialize() {
     solenoid();
 }
-} // namespace
 
 void up() {
     set_output(kUpOutput);
