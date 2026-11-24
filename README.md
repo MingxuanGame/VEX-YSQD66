@@ -33,8 +33,6 @@ src/
   io/pros_controller.cpp ProsController 继承实现
   lifting.cpp            双电机升降、手动功率与自动角度控制
   toggle.cpp             拉翻色桶机构（Brain 三线 D 口数字输出）
-static/
-  example.txt            LemLib Pure Pursuit 路径资源示例
 ```
 
 ## 环境配置与构建
